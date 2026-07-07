@@ -1,0 +1,29 @@
+# PII redaction policy-as-code (design Sections 14.3, 1.9). Owner: Chesta.
+# The preprocess worker loads this to detect + mask PII before persistence and before model calls.
+version: 1
+default_action: mask            # mask | blur | drop
+apply_before_persistence: true
+apply_before_model_call: true
+
+pii_classes:
+  - name: email
+    detector: regex
+    pattern: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+    action: mask
+  - name: credit_card
+    detector: luhn
+    action: drop
+  - name: person_name
+    detector: ner
+    action: mask
+  - name: address
+    detector: ner
+    action: mask
+  - name: auth_token
+    detector: regex
+    pattern: "(?i)(bearer\\s+[a-z0-9._-]+|api[_-]?key\\s*[:=]\\s*\\S+)"
+    action: drop
+
+exceptions:
+  # Tenants may log an explicit, audited exception to retain a class (design BR-5).
+  allow_list: []

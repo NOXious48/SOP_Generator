@@ -1,0 +1,24 @@
+# AI / ML plane dependencies (install on GPU / AI worker nodes only).
+# Pin exact versions during Sprint 1; kept loose here to avoid accidental local installs.
+
+# torch                      # install per CUDA build from pytorch.org
+# torchvision                # MUST match torch's CUDA build! ultralytics pulls a CPU-only wheel;
+#                            # fix: pip install --force-reinstall --no-deps torchvision --index-url
+#                            #      https://download.pytorch.org/whl/cu126
+# transformers               # Florence-2 captioner (OmniParser); needs einops + timm too
+# einops
+# timm
+# accelerate
+# paddleocr
+# paddlepaddle
+# opencv-python-headless
+# layoutparser
+# ultralytics                # OmniParser v2 icon_detect (YOLO)
+# segment-anything-2         # research track only (Section 15.7)
+# redis                      # perception cache backend (falls back to file cache without it)
+# langgraph
+# langchain-core
+# qdrant-client
+# neo4j
+# sentence-transformers
+# vllm                       # serving (Linux/GPU)

@@ -1,0 +1,21 @@
+[project]
+name = "processiq"
+version = "0.1.0"
+description = "Enterprise AI Process Intelligence Platform — Visual Process Understanding & SOP Generation Engine"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: FastAPI uses function calls (Depends/Header) in argument defaults by design.
+ignore = ["E501", "B008"]

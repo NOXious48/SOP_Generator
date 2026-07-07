@@ -1,0 +1,6 @@
+apiVersion: v2
+name: processiq
+description: ProcessIQ — Enterprise AI Process Intelligence Platform (design Section 13.2)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

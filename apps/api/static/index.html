@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ProcessIQ</title>
+<style>
+  :root { --bg:#0b1020; --card:#151b33; --line:#222a49; --ink:#e8ecf7; --muted:#95a0c0;
+          --accent:#6d5efc; --ok:#2fbf71; --warn:#e0a92b; --err:#ef5f6b; --ocr:#22c55e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Inter,Segoe UI,system-ui,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
+  .logo { width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#6d5efc,#41d1ff); }
+  h1 { font-size:17px; margin:0; } .sub { color:var(--muted); font-size:12px; }
+  main { max-width:1280px; margin:18px auto; padding:0 18px; display:grid; gap:14px;
+         grid-template-columns:340px 1fr 360px; align-items:start; }
+  .col { display:flex; flex-direction:column; gap:14px; min-width:0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:0 0 10px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:9px; padding:8px 13px;
+           font-weight:600; cursor:pointer; font-size:13px; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.ghost { background:transparent; border:1px solid #33406e; color:var(--ink); }
+  input,select { background:#0e142a; border:1px solid #33406e; color:var(--ink); border-radius:8px;
+                 padding:8px 10px; width:100%; font-size:13px; }
+  .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  .muted { color:var(--muted); font-size:12px; }
+  .drop { border:2px dashed #33406e; border-radius:12px; padding:22px; text-align:center;
+          color:var(--muted); font-size:13px; cursor:pointer; transition:border-color .15s; }
+  .drop.over { border-color:var(--accent); color:var(--ink); }
+  .thumbs { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .thumb { position:relative; width:72px; }
+  .thumb img { width:72px; height:48px; object-fit:cover; border-radius:6px; border:1px solid var(--line); }
+  .thumb .n { position:absolute; top:2px; left:4px; font-size:10px; background:#0009; border-radius:4px; padding:0 4px; }
+  .thumb .dup { position:absolute; bottom:2px; left:2px; right:2px; font-size:9px; text-align:center;
+                background:rgba(224,169,43,.85); color:#000; border-radius:4px; }
+  .meter { height:8px; background:#0e142a; border-radius:6px; overflow:hidden; }
+  .meter > div { height:100%; background:linear-gradient(90deg,#6d5efc,#41d1ff); transition:width .3s; }
+  .stage { font-size:12px; color:var(--muted); margin-top:6px; min-height:16px; }
+  .canvas-wrap { position:relative; width:100%; }
+  canvas { width:100%; border-radius:10px; border:1px solid var(--line); display:block; background:#0e142a; }
+  .screen-strip { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-bottom:10px; }
+  .screen-strip img { height:52px; border-radius:6px; border:2px solid var(--line); cursor:pointer; }
+  .screen-strip img.sel { border-color:var(--accent); }
+  .toggles { display:flex; gap:12px; margin:8px 0 0; font-size:12px; color:var(--muted); align-items:center; }
+  .toggles label { display:flex; gap:5px; align-items:center; cursor:pointer; }
+  .legend { width:10px; height:10px; border-radius:3px; display:inline-block; }
+  .step { border:1px solid #2a335c; border-radius:10px; padding:9px 11px; margin-bottom:8px; cursor:pointer; }
+  .step:hover, .step.sel { border-color:var(--accent); }
+  .step .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .step b { font-size:13px; }
+  .badge { font-size:10px; padding:2px 8px; border-radius:20px; white-space:nowrap; }
+  .b-ok { background:rgba(47,191,113,.15); color:var(--ok); }
+  .b-warn { background:rgba(224,169,43,.18); color:var(--warn); }
+  .kpi { display:flex; gap:10px; } .kpi div { flex:1; text-align:center; }
+  .kpi b { font-size:19px; display:block; } .kpi span { font-size:11px; color:var(--muted); }
+  pre { background:#0e142a; padding:10px; border-radius:8px; overflow:auto; font-size:11px; max-height:220px; }
+  table { width:100%; border-collapse:collapse; font-size:11px; }
+  th,td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; }
+  .status-line { font-size:12px; margin-top:8px; min-height:16px; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .err { color:var(--err); }
+  @media (max-width:1100px){ main { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"></div>
+  <div><h1>ProcessIQ</h1><div class="sub">Visual Process Understanding &amp; SOP Generation</div></div>
+  <div style="margin-left:auto" class="muted" id="profile-badge"></div>
+</header>
+<main>
+  <!-- LEFT: upload + run -->
+  <div class="col">
+    <div class="card">
+      <h2>1 · Upload screenshots</h2>
+      <div class="row"><input id="pname" value="My Process" placeholder="Process name" /></div>
+      <div class="drop" id="drop">Drag &amp; drop screenshots here<br/>or click to browse
+        <input type="file" id="file-input" accept="image/*" multiple hidden />
+      </div>
+      <div class="thumbs" id="thumbs"></div>
+      <div class="status-line muted" id="upload-status">No screenshots yet.</div>
+    </div>
+    <div class="card">
+      <h2>2 · Generate SOP</h2>
+      <div class="row">
+        <button id="run-btn" onclick="runJob()" disabled>Run AI pipeline</button>
+        <button class="ghost" onclick="resetAll()">Reset</button>
+      </div>
+      <div class="meter"><div id="bar" style="width:0%"></div></div>
+      <div class="stage" id="stage"></div>
+      <div class="status-line" id="job-status"></div>
+    </div>
+    <div class="card">
+      <h2>Agent trace</h2>
+      <table id="trace"><thead><tr><th>Agent</th><th>Model</th><th>ms</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <!-- CENTER: screen viewer -->
+  <div class="col">
+    <div class="card">
+      <h2>3 · Visual perception</h2>
+      <div class="screen-strip" id="strip"></div>
+      <div class="canvas-wrap"><canvas id="canvas" width="16" height="9"></canvas></div>
+      <div class="toggles">
+        <label><input type="checkbox" id="t-el" checked onchange="draw()" />
+          <span class="legend" style="background:#6d5efc"></span> Elements (<span id="c-el">0</span>)</label>
+        <label><input type="checkbox" id="t-ocr" checked onchange="draw()" />
+          <span class="legend" style="background:#22c55e"></span> OCR text (<span id="c-ocr">0</span>)</label>
+        <span id="sel-info" class="muted"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: SOP -->
+  <div class="col">
+    <div class="card">
+      <div class="kpi">
+        <div><b id="k-steps">–</b><span>Steps</span></div>
+        <div><b id="k-conf">–</b><span>Confidence</span></div>
+        <div><b id="k-state">–</b><span>State</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>4 · Generated SOP</h2>
+      <div id="sop-title" class="muted">Run the pipeline to generate an SOP.</div>
+      <div id="steps" style="margin-top:8px"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="ghost" onclick="publish()">Publish</button>
+        <select id="fmt"><option>markdown</option><option>html</option><option>json</option>
+          <option>bpmn</option><option>testcases</option><option>rpa</option><option>docx</option><option>pdf</option></select>
+        <button class="ghost" onclick="doExport()">Export</button>
+      </div>
+      <pre id="out" style="margin-top:10px; display:none"></pre>
+    </div>
+  </div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

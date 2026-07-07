@@ -1,0 +1,34 @@
+# Core runnable stack (control plane + orchestrator, no GPU/ML weights).
+# AI/ML heavy deps live in requirements-ai.txt (installed on GPU/AI nodes).
+
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+pydantic-settings==2.6.1
+python-multipart==0.0.19
+httpx==0.28.1
+structlog==24.4.0
+orjson==3.10.12
+
+# datastores (clients; servers run via docker-compose)
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+alembic==1.14.0
+redis==5.2.1
+pymongo==4.10.1
+
+# preprocessing / perception (CPU, no GPU)
+pillow==11.0.0
+
+# exports
+python-docx==1.1.2
+reportlab==4.2.5
+jinja2==3.1.4
+
+# observability
+prometheus-client==0.21.1
+
+# testing / quality
+pytest==8.3.4
+pytest-asyncio==0.24.0
+ruff==0.8.3
