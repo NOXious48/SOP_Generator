@@ -91,9 +91,15 @@ def _get_paddle():  # pragma: no cover
         from paddleocr import PaddleOCR
 
         device = "gpu" if os.getenv("OCR_DEVICE", "cuda") == "cuda" else "cpu"
+        # Model choice: lightweight mobile models by default (fast on CPU). Override with
+        # OCR_DET_MODEL / OCR_REC_MODEL (e.g. PP-OCRv5_server_* on the GPU server for max accuracy).
+        det = os.getenv("OCR_DET_MODEL") or None
+        rec = os.getenv("OCR_REC_MODEL") or None
         _PADDLE = PaddleOCR(
             lang=os.getenv("OCR_LANG", "en"),
             device=device,
+            text_detection_model_name=det,
+            text_recognition_model_name=rec,
             use_doc_orientation_classify=False,  # screenshots are upright; skip extra models
             use_doc_unwarping=False,
             use_textline_orientation=False,
