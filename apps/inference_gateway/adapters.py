@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from typing import Any
 
 import httpx
@@ -83,31 +84,51 @@ def ocr_region(image_path: str, crop_box: list[float]) -> list[dict[str, Any]]: 
 
 
 _PADDLE = None
+_PADDLE_LOCK = threading.Lock()
+
+
+def warmup_ocr() -> None:  # pragma: no cover - needs paddle
+    """Preload the OCR model (call at server startup so the first request never pays the load).
+
+    No-op unless the active profile actually uses PaddleOCR (skips mock profile / tests).
+    """
+    from .profiles import TASK_OCR, load_profile
+
+    spec = load_profile().models.get(TASK_OCR)
+    if spec and spec.backend == "paddle":
+        _get_paddle()
 
 
 def _get_paddle():  # pragma: no cover
     global _PADDLE
     if _PADDLE is None:
-        from paddleocr import PaddleOCR
-
-        device = "gpu" if os.getenv("OCR_DEVICE", "cuda") == "cuda" else "cpu"
-        # Model choice: lightweight mobile models by default (fast on CPU). Override with
-        # OCR_DET_MODEL / OCR_REC_MODEL (e.g. PP-OCRv5_server_* on the GPU server for max accuracy).
-        det = os.getenv("OCR_DET_MODEL") or None
-        rec = os.getenv("OCR_REC_MODEL") or None
-        _PADDLE = PaddleOCR(
-            lang=os.getenv("OCR_LANG", "en"),
-            device=device,
-            text_detection_model_name=det,
-            text_recognition_model_name=rec,
-            use_doc_orientation_classify=False,  # screenshots are upright; skip extra models
-            use_doc_unwarping=False,
-            use_textline_orientation=False,
-            # paddle 3.7 PIR executor + oneDNN crashes on Windows CPU
-            # (ConvertPirAttribute2RuntimeAttribute); opt back in via OCR_MKLDNN=1 on Linux
-            enable_mkldnn=os.getenv("OCR_MKLDNN", "0") == "1",
-        )
+        with _PADDLE_LOCK:  # double-checked: warmup thread + first request can race
+            if _PADDLE is not None:
+                return _PADDLE
+            _PADDLE = _build_paddle()
     return _PADDLE
+
+
+def _build_paddle():  # pragma: no cover
+    from paddleocr import PaddleOCR
+
+    device = "gpu" if os.getenv("OCR_DEVICE", "cuda") == "cuda" else "cpu"
+    # Model choice via OCR_DET_MODEL / OCR_REC_MODEL (PP-OCRv5_server_* = accurate,
+    # PP-OCRv5_mobile_* = fast). Defaults to Paddle's own picks when unset.
+    det = os.getenv("OCR_DET_MODEL") or None
+    rec = os.getenv("OCR_REC_MODEL") or None
+    return PaddleOCR(
+        lang=os.getenv("OCR_LANG", "en"),
+        device=device,
+        text_detection_model_name=det,
+        text_recognition_model_name=rec,
+        use_doc_orientation_classify=False,  # screenshots are upright; skip extra models
+        use_doc_unwarping=False,
+        use_textline_orientation=False,
+        # paddle 3.7 PIR executor + oneDNN crashes on Windows CPU
+        # (ConvertPirAttribute2RuntimeAttribute); opt back in via OCR_MKLDNN=1 on Linux
+        enable_mkldnn=os.getenv("OCR_MKLDNN", "0") == "1",
+    )
 
 
 # ---------- Detection (OmniParser v2) ----------

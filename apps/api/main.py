@@ -4,7 +4,9 @@ Modular monolith mounting every bounded-context router + observability + a serve
 """
 from __future__ import annotations
 
+import threading
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -31,10 +33,36 @@ from apps.api.routers import health as health_router
 # before any request; agents read the env at call time.
 load_dotenv()
 
+def _start_ocr_warmup() -> None:
+    """Preload the OCR model in a background thread at boot so no user waits for the first load.
+    Disable with WARMUP_OCR=0. No-op unless the active profile uses PaddleOCR (skips mock/tests)."""
+    import os
+
+    if os.getenv("WARMUP_OCR", "1") == "0":
+        return
+
+    def _run() -> None:
+        try:
+            from apps.inference_gateway.adapters import warmup_ocr
+
+            warmup_ocr()
+        except Exception:  # noqa: BLE001 - warmup must never crash the server
+            pass
+
+    threading.Thread(target=_run, name="ocr-warmup", daemon=True).start()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _start_ocr_warmup()  # boot stays instant; model loads in the background
+    yield
+
+
 app = FastAPI(
     title="ProcessIQ API",
     version="0.1.0",
     description="Enterprise AI Process Intelligence Platform — control plane.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(MetricsMiddleware)
