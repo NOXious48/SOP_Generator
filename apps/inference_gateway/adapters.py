@@ -48,6 +48,40 @@ def ocr_local(image_path: str) -> list[dict[str, Any]]:  # pragma: no cover - ne
     return regions
 
 
+def ocr_region(image_path: str, crop_box: list[float]) -> list[dict[str, Any]]:  # pragma: no cover - needs paddle
+    """OCR only a sub-region of the image (crop_box = normalized [x,y,w,h]).
+
+    Fast localization: instead of OCRing the whole screenshot, OCR a small crop around a VLM's
+    approximate box, then map the detected text boxes back to full-image normalized coordinates.
+    Used to snap VLM-proposed click targets onto their exact pixels.
+    """
+    import numpy as np
+    from PIL import Image
+
+    img = Image.open(image_path).convert("RGB")
+    W, H = img.size
+    x, y, w, h = crop_box
+    left, top = max(0, int(x * W)), max(0, int(y * H))
+    right, bottom = min(W, int((x + w) * W)), min(H, int((y + h) * H))
+    if right - left < 4 or bottom - top < 4:
+        return []
+    crop = img.crop((left, top, right, bottom))
+    engine = _get_paddle()
+    regions: list[dict[str, Any]] = []
+    for page in engine.predict(np.array(crop)):
+        data = page if "rec_texts" in page else page.get("res", {})
+        for text, score, poly in zip(data["rec_texts"], data["rec_scores"], data["rec_polys"],
+                                     strict=False):
+            xs = [float(p[0]) for p in poly]
+            ys = [float(p[1]) for p in poly]
+            # map crop-local pixels back to full-image normalized [x, y, w, h]
+            fx0, fy0 = (left + min(xs)) / W, (top + min(ys)) / H
+            fw, fh = (max(xs) - min(xs)) / W, (max(ys) - min(ys)) / H
+            regions.append({"text": text, "confidence": float(score),
+                            "bbox": [fx0, fy0, fw, fh]})
+    return regions
+
+
 _PADDLE = None
 
 

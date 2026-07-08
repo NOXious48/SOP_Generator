@@ -11,7 +11,7 @@ from apps.api import audit, objstore
 from apps.api.security_ctx import Principal, require
 from apps.api.store import store
 from processiq_shared.models import CreateProcessRequest
-from services.preprocess import is_duplicate, preprocess_image
+from services.preprocess import preprocess_image
 
 router = APIRouter(prefix="/v1/processes", tags=["processes"])
 
@@ -57,10 +57,9 @@ async def upload_file(process_id: str, file: UploadFile,
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=422, detail=f"invalid image: {exc}") from exc
 
-    existing_hashes = [a.get("phash") for a in proc["artifacts"] if a.get("phash")]
-    if is_duplicate(processed.phash, existing_hashes):
-        return {"deduplicated": True, "phash": processed.phash}
-
+    # NOTE: no near-duplicate dropping. Workflow screens of the same app look alike (shared header/
+    # sidebar) and must all be kept — every uploaded screen becomes a step. (pHash retained as
+    # metadata only.) Exact double-uploads are the user's call to remove.
     artifact_id = store.new_id("art")
     meta = objstore.put(proc["tenant_id"], process_id, "processed", artifact_id,
                         processed.data, ".png")

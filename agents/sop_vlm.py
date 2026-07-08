@@ -14,6 +14,7 @@ Design choices:
 from __future__ import annotations
 
 import json
+import os
 import re
 
 from processiq_shared.enums import SopState
@@ -117,11 +118,16 @@ class VlmSopGenerationAgent(Agent):
 
     def _build_sop(self, state: AgentState, ordered, data: dict) -> SOP:
         artifact_by_index = {i + 1: s.artifact_id for i, s in enumerate(ordered)}
+        paths = state.job.plan.get("artifact_paths", {})
+        ground = os.getenv("GROUND_BBOX", "1") != "0"
         steps: list[SopStep] = []
         for i, raw_step in enumerate(data.get("steps", []), start=1):
             screen_idx = int(raw_step.get("screen") or i)
             artifact_id = artifact_by_index.get(screen_idx) or ordered[min(i, len(ordered)) - 1].artifact_id
             bbox = self._norm_bbox(raw_step.get("box_2d"))
+            if ground and bbox:
+                # Snap the VLM's approximate box to the exact control via crop-OCR of its label.
+                bbox = self._ground_bbox(paths.get(artifact_id), raw_step.get("target"), bbox)
             desc = raw_step.get("description", "")
             if raw_step.get("expected_result"):
                 desc = f"{desc}\nExpected result: {raw_step['expected_result']}"
@@ -146,6 +152,55 @@ class VlmSopGenerationAgent(Agent):
             state=SopState.DRAFT,
             provenance=Provenance(models=[self.model], prompt_versions=["vlm-sop-v1"]),
         )
+
+    def _ground_bbox(self, image_path, target, vlm_box):
+        """Combine VLM + OCR: crop-OCR around the VLM box and snap onto the target label's pixels.
+
+        Returns the OCR-precise box when the target text is found near the VLM box, else the VLM
+        box unchanged. Fails safe (any error -> VLM box) so generation never breaks.
+        """
+        if not image_path or not target:
+            return vlm_box
+        target_norm = self._norm_text(target)
+        if len(target_norm) < 2:
+            return vlm_box
+        try:
+            from apps.inference_gateway.adapters import ocr_region
+        except Exception:
+            return vlm_box
+        crop = self._search_crop(vlm_box)
+        try:
+            regions = ocr_region(image_path, crop)
+        except Exception:
+            return vlm_box
+        vx, vy = vlm_box[0] + vlm_box[2] / 2, vlm_box[1] + vlm_box[3] / 2
+        best, best_d = None, 1e9
+        for r in regions:
+            rt = self._norm_text(r["text"])
+            if not rt or (target_norm not in rt and rt not in target_norm):
+                continue
+            rb = r["bbox"]
+            d = ((rb[0] + rb[2] / 2) - vx) ** 2 + ((rb[1] + rb[3] / 2) - vy) ** 2
+            if d < best_d:
+                best, best_d = rb, d
+        return best or vlm_box
+
+    @staticmethod
+    def _search_crop(box) -> list[float]:
+        """Region to OCR around the VLM box. Gemini's boxes read systematically too HIGH, so the
+        crop reaches much further below the box than above it (evidence: Login->Password,
+        Recruitment->Time were all one element too high)."""
+        x, y, w, h = box
+        cx, cy = x + w / 2, y + h / 2
+        half_w = max(w / 2 + 0.12, 0.20)
+        top = max(0.0, cy - 0.09)
+        bottom = min(1.0, cy + 0.24)
+        nx = max(0.0, cx - half_w)
+        return [nx, top, min(2 * half_w, 1 - nx), bottom - top]
+
+    @staticmethod
+    def _norm_text(s: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
     @staticmethod
     def _clamp(v) -> float:
