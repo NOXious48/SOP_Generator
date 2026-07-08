@@ -5,12 +5,26 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from apps.api import audit
+from apps.api import audit, objstore
 from apps.api.security_ctx import Principal, require
 from apps.api.store import store
 from services.export import SUPPORTED, export
 
 router = APIRouter(prefix="/v1/sops", tags=["exports"])
+
+
+def _image_loader_for(process_id: str):
+    """Resolve a step's artifact_id -> stored screenshot bytes, so exports can embed them."""
+    proc = store.processes.get(process_id, {})
+    keys = {a["id"]: a.get("object_key") for a in proc.get("artifacts", [])}
+
+    def load(artifact_id: str) -> bytes | None:
+        key = keys.get(artifact_id)
+        if key and objstore.exists(key):
+            return objstore.get(key)
+        return None
+
+    return load
 
 
 class ExportRequest(BaseModel):
@@ -29,7 +43,7 @@ def create_export(sop_id: str, req: ExportRequest,
     if not sop:
         raise HTTPException(status_code=404, detail="sop not found")
     try:
-        data, content_type = export(sop, req.format)
+        data, content_type = export(sop, req.format, image_loader=_image_loader_for(sop.process_id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     audit.record(sop.tenant_id, p.user, "sop.export", "sop", sop_id, {"format": req.format})

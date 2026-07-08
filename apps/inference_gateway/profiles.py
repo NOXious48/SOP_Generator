@@ -30,7 +30,7 @@ class ModelSpec:
     est_vram_mb: int = 0           # resident VRAM once loaded (cuda only)
     max_pixels: int | None = None  # image-token cap (Qwen2.5-VL dynamic resolution can blow KV cache)
     single_flight: bool = False    # serialize inference calls (heavy model on a shared GPU)
-    fallback: "ModelSpec | None" = None  # Tier-2 escalation (HR-9); hosted API in every GPU profile
+    fallback: ModelSpec | None = None  # Tier-2 escalation (HR-9); hosted API in every GPU profile
 
 
 @dataclass(frozen=True)

@@ -35,7 +35,8 @@ def ocr_local(image_path: str) -> list[dict[str, Any]]:  # pragma: no cover - ne
     regions: list[dict[str, Any]] = []
     for page in engine.predict(image_path):
         data = page if "rec_texts" in page else page.get("res", {})  # dict-like OCRResult
-        for text, score, poly in zip(data["rec_texts"], data["rec_scores"], data["rec_polys"]):
+        for text, score, poly in zip(data["rec_texts"], data["rec_scores"], data["rec_polys"],
+                                     strict=False):
             xs = [float(p[0]) for p in poly]
             ys = [float(p[1]) for p in poly]
             x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
@@ -99,7 +100,8 @@ def detect_elements(image_path: str, device: str = "cuda") -> list[dict[str, Any
         verbose=False,
     )[0]
     elements: list[dict[str, Any]] = []
-    for (x1, y1, x2, y2), score in zip(result.boxes.xyxy.tolist(), result.boxes.conf.tolist()):
+    for (x1, y1, x2, y2), score in zip(result.boxes.xyxy.tolist(), result.boxes.conf.tolist(),
+                                       strict=False):
         elements.append({
             "type": "interactable",
             "bbox": [x1 / width, y1 / height, (x2 - x1) / width, (y2 - y1) / height],
@@ -162,7 +164,7 @@ def _caption_elements(img, elements: list[dict[str, Any]], device: str,
                 input_ids=inputs["input_ids"], pixel_values=inputs["pixel_values"],
                 max_new_tokens=20, num_beams=1, do_sample=False)
         for el, text in zip(elements[i:i + batch_size],
-                            processor.batch_decode(ids, skip_special_tokens=True)):
+                            processor.batch_decode(ids, skip_special_tokens=True), strict=False):
             el["caption"] = text.strip()
 
 

@@ -8,10 +8,7 @@ import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
-
-load_dotenv()  # populate os.environ from .env so adapters (os.getenv) see HOSTED_VLM_* etc.
-
-from fastapi import FastAPI, Request  # noqa: E402
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +26,10 @@ from apps.api.routers import (
     sops,
 )
 from apps.api.routers import health as health_router
+
+# Populate os.environ from .env so adapters (os.getenv) see HOSTED_VLM_* etc. Runs at import,
+# before any request; agents read the env at call time.
+load_dotenv()
 
 app = FastAPI(
     title="ProcessIQ API",

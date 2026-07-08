@@ -49,7 +49,8 @@ _SCHEMA_HINT = (
     '      "action": string,                // short imperative, e.g. "Open Recruitment"\n'
     '      "description": string,           // what to do, naming the exact button/field\n'
     '      "target": string|null,           // exact visible label of the control to click/fill\n'
-    '      "bbox": [x, y, w, h]|null,        // normalized 0-1 top-left origin of that control\n'
+    '      "box_2d": [ymin, xmin, ymax, xmax]|null,  // bounding box of that control, integers\n'
+    "                                       //   0-1000 relative to ITS screenshot, top-left origin\n"
     '      "expected_result": string,       // what the user should see after this step\n'
     '      "confidence": number             // 0-1, your confidence this step is correct\n'
     "    }\n"
@@ -57,7 +58,11 @@ _SCHEMA_HINT = (
     '  "exceptions": [string],              // common error paths\n'
     '  "validation": [string],              // checks to confirm success\n'
     '  "output": string                     // the end result of the whole process\n'
-    "}"
+    "}\n\n"
+    "For box_2d, locate the exact control the user clicks/fills and give a TIGHT bounding box "
+    "around just that control (not the whole section), as [ymin, xmin, ymax, xmax] with each value "
+    "an integer from 0 to 1000 relative to that screenshot. Use null only if there is no single "
+    "control for the step."
 )
 
 
@@ -116,7 +121,7 @@ class VlmSopGenerationAgent(Agent):
         for i, raw_step in enumerate(data.get("steps", []), start=1):
             screen_idx = int(raw_step.get("screen") or i)
             artifact_id = artifact_by_index.get(screen_idx) or ordered[min(i, len(ordered)) - 1].artifact_id
-            bbox = self._norm_bbox(raw_step.get("bbox"))
+            bbox = self._norm_bbox(raw_step.get("box_2d"))
             desc = raw_step.get("description", "")
             if raw_step.get("expected_result"):
                 desc = f"{desc}\nExpected result: {raw_step['expected_result']}"
@@ -124,8 +129,8 @@ class VlmSopGenerationAgent(Agent):
                 no=i,
                 action=raw_step.get("action") or f"Step {i}",
                 description=desc,
-                screenshot_ref=ScreenshotRef(artifact_id=artifact_id, bbox=bbox) if bbox else
-                               ScreenshotRef(artifact_id=artifact_id, bbox=[0.0, 0.0, 1.0, 1.0]),
+                # bbox=[0,0,0,0] sentinel = "no specific control" (exports/UI skip drawing a box)
+                screenshot_ref=ScreenshotRef(artifact_id=artifact_id, bbox=bbox or [0.0, 0.0, 0.0, 0.0]),
                 confidence=self._clamp(raw_step.get("confidence", 0.85)),
             ))
         return SOP(
@@ -150,17 +155,18 @@ class VlmSopGenerationAgent(Agent):
             return 0.85
 
     @staticmethod
-    def _norm_bbox(bbox) -> list[float] | None:
-        """Accept [x,y,w,h]; tolerate 0-1000 scale (common VLM convention) and clamp to [0,1]."""
-        if not bbox or len(bbox) != 4:
+    def _norm_bbox(box_2d) -> list[float] | None:
+        """Convert Gemini's native [ymin, xmin, ymax, xmax] (0-1000) to normalized [x, y, w, h]."""
+        if not box_2d or len(box_2d) != 4:
             return None
         try:
-            vals = [float(v) for v in bbox]
+            ymin, xmin, ymax, xmax = (float(v) for v in box_2d)
         except (TypeError, ValueError):
             return None
-        if any(v > 1.5 for v in vals):  # looks like a 0-1000 (or pixel-ish) scale
-            vals = [v / 1000.0 for v in vals]
-        x, y, w, h = (max(0.0, min(1.0, v)) for v in vals)
+        scale = 1000.0 if max(ymin, xmin, ymax, xmax) > 1.5 else 1.0
+        x, y = xmin / scale, ymin / scale
+        w, h = (xmax - xmin) / scale, (ymax - ymin) / scale
+        x, y = max(0.0, min(1.0, x)), max(0.0, min(1.0, y))
         if w <= 0 or h <= 0:
             return None
         return [x, y, min(w, 1 - x), min(h, 1 - y)]
