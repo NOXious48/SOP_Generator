@@ -4,6 +4,7 @@ const H = { "X-Tenant": "demo", "X-User": "demo@analyst", "X-Roles": "Admin,Anal
 const JSON_H = { ...H, "Content-Type": "application/json" };
 
 let processId = null, jobId = null, sopId = null;
+let running = false;   // guards against double-clicking Run (would fire two jobs / two API calls)
 let screens = [];          // perception: [{artifact_id, order, elements[], text[]}]
 let artifacts = [];        // [{id, order, filename}]
 let images = {};           // artifact_id -> HTMLImageElement
@@ -65,7 +66,8 @@ async function addFiles(fileList) {
 
 // ---------- job ----------
 async function runJob() {
-  if (!processId || !artifacts.length) return;
+  if (running || !processId || !artifacts.length) return;   // ignore extra clicks while a job runs
+  running = true;
   $("run-btn").disabled = true;
   setStatus("job-status", "");
   $("stage").textContent = "starting…"; $("bar").style.width = "3%";
@@ -75,7 +77,7 @@ async function runJob() {
         options: { async: true, instruction: $("instruction").value.trim() } }) });
     jobId = j.jobId;
     pollJob();
-  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); $("run-btn").disabled = false; }
+  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); running = false; $("run-btn").disabled = false; }
 }
 
 async function pollJob() {
@@ -86,16 +88,16 @@ async function pollJob() {
     if (last) { $("bar").style.width = `${Math.max(3, last.progress)}%`; $("stage").textContent = `${last.stage} — ${last.message}`; }
     if (job.status === "FAILED") {
       setStatus("job-status", "✗ " + (job.error ? job.error.detail : "pipeline failed"), "err");
-      $("run-btn").disabled = false; return;
+      running = false; $("run-btn").disabled = false; return;
     }
     if (job.status === "COMPLETED" || job.status === "NEEDS_REVIEW") {
       sopId = job.sop_id; $("bar").style.width = "100%"; $("stage").textContent = "done";
       setStatus("job-status", job.status === "NEEDS_REVIEW" ? "Done — some steps need review." : "Done.", job.status === "NEEDS_REVIEW" ? "warn" : "ok");
       await Promise.all([loadSop(), loadPerception(), loadTrace()]);
-      $("run-btn").disabled = false; return;
+      running = false; $("run-btn").disabled = false; return;
     }
     setTimeout(pollJob, 1000);
-  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); $("run-btn").disabled = false; }
+  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); running = false; $("run-btn").disabled = false; }
 }
 
 // ---------- perception viewer ----------
