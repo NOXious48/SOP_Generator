@@ -1,0 +1,36 @@
+# Keep the build context (and image) small.
+.git/
+.github/
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Runtime / generated data — not part of the image
+objstore_data/
+.cache/
+weights/
+models/
+*.pt
+*.pth
+*.safetensors
+
+# Local secrets (injected at runtime via env_file, never baked in)
+.env
+.env.*
+!.env.example
+
+# Frontend build artifacts + node deps
+frontend/node_modules/
+frontend/.next/
+
+# Docs / scratch not needed at runtime
+more/
+deck/
+docs/
+eval/
+*.log
