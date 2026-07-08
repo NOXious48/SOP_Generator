@@ -28,7 +28,12 @@
   .field:focus { outline:none; border-color:#7C3AED; box-shadow:0 0 0 3px rgba(124,58,237,.12); }
   .eyebrow { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; }
   .meter { height:8px; background:#eef0f5; border-radius:999px; overflow:hidden; }
-  .meter>div { height:100%; border-radius:999px; background-image:linear-gradient(90deg,#2563EB,#7C3AED,#06B6D4); transition:width .35s ease; }
+  .meter>div { height:100%; border-radius:999px; transition:width .45s ease;
+               background-image:linear-gradient(90deg,#2563EB,#7C3AED,#06B6D4,#2563EB); background-size:200% 100%; }
+  .meter>div.working { animation:barflow 1.2s linear infinite; }
+  @keyframes barflow { from { background-position:0 0; } to { background-position:-200% 0; } }
+  .stage-dot::after { content:''; animation:dots 1.4s steps(4,end) infinite; }
+  @keyframes dots { 0%{content:'';} 25%{content:'.';} 50%{content:'..';} 75%{content:'...';} }
   .strip img { height:56px; border-radius:9px; border:2px solid #e2e8f0; cursor:pointer; transition:border-color .15s, transform .1s; }
   .strip img:hover { transform:translateY(-1px); }
   .strip img.sel { border-color:#7C3AED; box-shadow:0 0 0 3px rgba(124,58,237,.14); }
@@ -110,12 +115,9 @@
       <div id="viewer-content" class="hidden">
         <div class="strip flex gap-2 overflow-x-auto pb-2 mb-3" id="strip"></div>
         <div class="canvas-scroll" id="canvas-scroll"><canvas id="canvas" width="16" height="9"></canvas></div>
-        <div class="flex items-center gap-4 mt-3 text-[12px] text-slate-500">
-          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="t-el" checked onchange="draw()" class="accent-brand-violet" />
-            <span class="inline-block w-2.5 h-2.5 rounded" style="background:#7C3AED"></span> Elements (<span id="c-el">0</span>)</label>
-          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="t-ocr" checked onchange="draw()" class="accent-brand-cyan" />
-            <span class="inline-block w-2.5 h-2.5 rounded" style="background:#06B6D4"></span> OCR text (<span id="c-ocr">0</span>)</label>
-          <span id="sel-info" class="text-slate-400 ml-auto"></span>
+        <div class="flex items-center mt-3 text-[12px] text-slate-400">
+          <span id="sel-info"></span>
+          <span class="ml-auto">Click a step to highlight its control ↓</span>
         </div>
       </div>
     </section>

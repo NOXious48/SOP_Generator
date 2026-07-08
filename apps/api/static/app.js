@@ -70,34 +70,33 @@ async function runJob() {
   running = true;
   $("run-btn").disabled = true;
   setStatus("job-status", "");
-  $("stage").textContent = "starting…"; $("bar").style.width = "3%";
+  startProgress();
   try {
     const j = await api("/v1/jobs", { method: "POST",
       body: JSON.stringify({ process_id: processId,
         options: { async: true, instruction: $("instruction").value.trim() } }) });
     jobId = j.jobId;
     pollJob();
-  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); running = false; $("run-btn").disabled = false; }
+  } catch (e) { stopProgress(false); setStatus("job-status", "✗ " + e.message, "err"); running = false; $("run-btn").disabled = false; }
 }
 
 async function pollJob() {
   try {
     const job = await api(`/v1/jobs/${jobId}`);
-    const prog = await api(`/v1/jobs/${jobId}/progress`);
-    const last = prog.events[prog.events.length - 1];
-    if (last) { $("bar").style.width = `${Math.max(3, last.progress)}%`; $("stage").textContent = `${last.stage} — ${last.message}`; }
     if (job.status === "FAILED") {
+      stopProgress(false);
       setStatus("job-status", "✗ " + (job.error ? job.error.detail : "pipeline failed"), "err");
       running = false; $("run-btn").disabled = false; return;
     }
     if (job.status === "COMPLETED" || job.status === "NEEDS_REVIEW") {
-      sopId = job.sop_id; $("bar").style.width = "100%"; $("stage").textContent = "done";
+      sopId = job.sop_id;
+      stopProgress(true);
       setStatus("job-status", job.status === "NEEDS_REVIEW" ? "Done — some steps need review." : "Done.", job.status === "NEEDS_REVIEW" ? "warn" : "ok");
       await Promise.all([loadSop(), loadPerception(), loadTrace()]);
       running = false; $("run-btn").disabled = false; return;
     }
     setTimeout(pollJob, 1000);
-  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); running = false; $("run-btn").disabled = false; }
+  } catch (e) { stopProgress(false); setStatus("job-status", "✗ " + e.message, "err"); running = false; $("run-btn").disabled = false; }
 }
 
 // ---------- perception viewer ----------
@@ -135,18 +134,10 @@ function draw() {
   canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
   ctx.drawImage(img, 0, 0);
   const W = canvas.width, Hh = canvas.height;
-  const box = (b) => [b[0] * W, b[1] * Hh, b[2] * W, b[3] * Hh];
-  if ($("t-el").checked) {
-    ctx.strokeStyle = "#7C3AED"; ctx.lineWidth = Math.max(2, W / 700);
-    for (const el of screen.elements) { const [x, y, w, h] = box(el.bbox); ctx.strokeRect(x, y, w, h); }
-  }
-  if ($("t-ocr").checked) {
-    ctx.strokeStyle = "#06B6D4"; ctx.lineWidth = Math.max(1, W / 1000);
-    for (const t of screen.text) { const [x, y, w, h] = box(t.bbox); ctx.strokeRect(x, y, w, h); }
-  }
   if (highlightBbox) {
+    const [x, y, w, h] = [highlightBbox[0] * W, highlightBbox[1] * Hh, highlightBbox[2] * W, highlightBbox[3] * Hh];
     ctx.strokeStyle = "#F59E0B"; ctx.lineWidth = Math.max(4, W / 320);
-    const [x, y, w, h] = box(highlightBbox); ctx.strokeRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
     // scroll inside the pinned viewer so the highlighted control is centered
     const wrap = $("canvas-scroll");
     requestAnimationFrame(() => {
@@ -154,9 +145,43 @@ function draw() {
       wrap.scrollTo({ top: centerY - wrap.clientHeight / 2, behavior: "smooth" });
     });
   }
-  $("c-el").textContent = screen.elements.length;
-  $("c-ocr").textContent = screen.text.length;
-  $("sel-info").textContent = `screen ${screen.order}`;
+  const info = $("sel-info"); if (info) info.textContent = `Screen ${screen.order} of ${screens.length}`;
+}
+
+// ---------- animated progress (the job has no fine-grained server progress, so we simulate motion) ----------
+let progTimer = null;
+const PROG_MSGS = [
+  "Analyzing your screenshots",
+  "Understanding the workflow",
+  "Identifying buttons, fields & actions",
+  "Writing the step-by-step SOP",
+  "Locating the control for each step",
+  "Finalizing your SOP",
+];
+function startProgress() {
+  stopProgressTimer();
+  let pct = 5, tick = 0, i = 0;
+  const bar = $("bar"), stage = $("stage");
+  bar.classList.add("working");
+  bar.style.width = "5%";
+  stage.className = "text-[12px] text-slate-500 mt-2 min-h-[16px] stage-dot";
+  stage.textContent = PROG_MSGS[0];
+  progTimer = setInterval(() => {
+    tick++;
+    pct += Math.max(0.5, (93 - pct) * 0.045);   // creep smoothly toward 93%, never hit 100 until done
+    if (pct > 93) pct = 93;
+    bar.style.width = pct.toFixed(1) + "%";
+    if (tick % 6 === 0 && i < PROG_MSGS.length - 1) { i++; stage.textContent = PROG_MSGS[i]; }
+  }, 450);
+}
+function stopProgressTimer() { if (progTimer) { clearInterval(progTimer); progTimer = null; } }
+function stopProgress(done) {
+  stopProgressTimer();
+  const bar = $("bar"), stage = $("stage");
+  bar.classList.remove("working");
+  bar.style.width = done ? "100%" : "0%";
+  stage.className = "text-[12px] text-slate-500 mt-2 min-h-[16px]";
+  stage.textContent = done ? "Done ✓" : "";
 }
 
 // ---------- SOP ----------
