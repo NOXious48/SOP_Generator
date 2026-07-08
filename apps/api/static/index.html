@@ -32,7 +32,7 @@
   .strip img { height:56px; border-radius:9px; border:2px solid #e2e8f0; cursor:pointer; transition:border-color .15s, transform .1s; }
   .strip img:hover { transform:translateY(-1px); }
   .strip img.sel { border-color:#7C3AED; box-shadow:0 0 0 3px rgba(124,58,237,.14); }
-  .canvas-scroll { border:1px solid #e2e8f0; border-radius:12px; background:#f8fafc; overflow:hidden; }
+  .canvas-scroll { max-height:calc(100vh - 250px); overflow:auto; border:1px solid #e2e8f0; border-radius:12px; background:#f8fafc; }
   canvas { width:100%; display:block; }
   ::-webkit-scrollbar { height:8px; width:8px; } ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:8px; }
   .step-card { border:1px solid #eef0f5; border-radius:12px; padding:12px 14px; margin-bottom:10px; cursor:pointer; transition:border-color .15s, box-shadow .15s; }
@@ -53,7 +53,7 @@
   </div>
 </header>
 
-<main class="max-w-[1360px] mx-auto px-6 py-6 grid gap-5 items-start" style="grid-template-columns:360px 1fr 380px;">
+<main class="max-w-[1360px] mx-auto px-6 py-6 grid gap-5" style="grid-template-columns:360px 1fr 380px;">
 
   <!-- LEFT: describe + upload + run + trace -->
   <div class="flex flex-col gap-5 min-w-0">
@@ -92,9 +92,9 @@
     </section>
   </div>
 
-  <!-- CENTER: perception viewer -->
+  <!-- CENTER: perception viewer (sticky — stays in view while you scroll the SOP) -->
   <div class="flex flex-col gap-5 min-w-0">
-    <section class="card p-5">
+    <section class="card p-5 sticky top-[76px] self-start">
       <div class="eyebrow mb-3">3 · Visual Perception</div>
 
       <!-- empty state (cover hero) -->
