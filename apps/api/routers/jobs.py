@@ -31,11 +31,11 @@ def create_job(req: CreateJobRequest, p: Principal = Depends(require("job:create
     store.save_job(job)
     audit.record(job.tenant_id, p.user, "job.run", "job", job.id, {})
     if req.options.get("async"):
-        # Real-model runs take minutes; return immediately and let the UI poll progress.
-        threading.Thread(target=run_job_safe, args=(job,), daemon=True).start()
+        # Real-model runs take seconds-to-minutes; return immediately and let the UI poll progress.
+        threading.Thread(target=run_job_safe, args=(job, req.options), daemon=True).start()
         return {"jobId": job.id, "status": job.status}
-    # Scaffold default: run inline (tests/demo). Production: enqueue jobs.submitted (design §8).
-    job = run_job(job)
+    # Sync default (tests). Production: enqueue jobs.submitted (design §8).
+    job = run_job(job, req.options)
     JOBS.labels(job.status).inc()
     return {"jobId": job.id, "status": job.status, "sopId": job.sop_id}
 

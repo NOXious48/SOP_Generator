@@ -7,7 +7,11 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from dotenv import load_dotenv
+
+load_dotenv()  # populate os.environ from .env so adapters (os.getenv) see HOSTED_VLM_* etc.
+
+from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles

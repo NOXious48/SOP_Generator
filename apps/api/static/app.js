@@ -29,7 +29,7 @@ fileInput.onchange = () => addFiles(fileInput.files);
 
 async function ensureProcess() {
   if (processId) return;
-  const p = await api("/v1/processes", { method: "POST", body: JSON.stringify({ name: $("pname").value || "My Process" }) });
+  const p = await api("/v1/processes", { method: "POST", body: JSON.stringify({ name: $("pname").value || "Untitled Process" }) });
   processId = p.processId;
 }
 
@@ -67,7 +67,8 @@ async function runJob() {
   $("stage").textContent = "starting…"; $("bar").style.width = "3%";
   try {
     const j = await api("/v1/jobs", { method: "POST",
-      body: JSON.stringify({ process_id: processId, options: { async: true } }) });
+      body: JSON.stringify({ process_id: processId,
+        options: { async: true, instruction: $("instruction").value.trim() } }) });
     jobId = j.jobId;
     pollJob();
   } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); $("run-btn").disabled = false; }

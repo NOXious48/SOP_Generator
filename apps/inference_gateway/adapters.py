@@ -206,6 +206,40 @@ def ollama_chat(prompt: str, system: str = "", json_mode: bool = False) -> str: 
     return r.json().get("response", "")
 
 
+def vlm_chat(prompt: str, system: str = "", image_paths: list[str] | None = None,
+             json_mode: bool = False) -> str:  # pragma: no cover - needs network
+    """Multimodal chat: send text + screenshots to a hosted VLM (Gemini OpenAI-compat endpoint).
+
+    Images are inlined as base64 data URIs in the OpenAI vision message format, so any
+    OpenAI-compatible vision model works. Used by the VLM SOP-generation path.
+    """
+    import base64
+    import mimetypes
+    from pathlib import Path
+
+    base = os.getenv("HOSTED_VLM_BASE_URL")
+    key = os.getenv("HOSTED_VLM_API_KEY")
+    model = os.getenv("HOSTED_MODEL", "gemini-2.5-flash")
+    if not base or not key:
+        raise RuntimeError("HOSTED_VLM_BASE_URL / HOSTED_VLM_API_KEY not set")
+
+    content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+    for p in image_paths or []:
+        mime = mimetypes.guess_type(p)[0] or "image/png"
+        b64 = base64.b64encode(Path(p).read_bytes()).decode()
+        content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
+        **({"response_format": {"type": "json_object"}} if json_mode else {}),
+    }
+    r = httpx.post(f"{base.rstrip('/')}/chat/completions", json=body,
+                   headers={"Authorization": f"Bearer {key}"}, timeout=180)
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]["content"]
+
+
 def hosted_chat(prompt: str, system: str = "", json_mode: bool = False) -> str:  # pragma: no cover
     base = os.getenv("HOSTED_VLM_BASE_URL")
     key = os.getenv("HOSTED_VLM_API_KEY")

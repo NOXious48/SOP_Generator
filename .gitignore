@@ -62,6 +62,8 @@ kubeconfig
 *.log
 
 # ---- Databases / storage (local dev) ----
+objstore_data/
+more/
 *.db
 *.sqlite3
 pgdata/

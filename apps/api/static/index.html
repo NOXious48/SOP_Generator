@@ -73,9 +73,11 @@
   <!-- LEFT: upload + run -->
   <div class="col">
     <div class="card">
-      <h2>1 · Upload screenshots</h2>
-      <div class="row"><input id="pname" value="My Process" placeholder="Process name" /></div>
-      <div class="drop" id="drop">Drag &amp; drop screenshots here<br/>or click to browse
+      <h2>1 · Describe &amp; upload</h2>
+      <div class="row"><input id="pname" placeholder="Process name — e.g. Add a candidate in Recruitment" /></div>
+      <div class="row"><textarea id="instruction" rows="3" style="width:100%;background:#0e142a;border:1px solid #33406e;color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical"
+        placeholder="Tell the AI what this process is and what the user is doing across these screens. e.g. 'Log in to OrangeHRM, open Recruitment, and add a new candidate.'"></textarea></div>
+      <div class="drop" id="drop">Drag &amp; drop screenshots (in order) here<br/>or click to browse
         <input type="file" id="file-input" accept="image/*" multiple hidden />
       </div>
       <div class="thumbs" id="thumbs"></div>

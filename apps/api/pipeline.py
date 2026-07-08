@@ -5,11 +5,14 @@ Section 8). For the scaffold we run the pipeline inline so the demo works with n
 """
 from __future__ import annotations
 
+import os
+from typing import Any
+
 from apps import bus
 from apps.api import objstore
 from apps.api.config import settings
 from apps.api.store import store
-from apps.orchestrator.graph import run_pipeline
+from apps.orchestrator.graph import run_pipeline, run_vlm_pipeline
 from processiq_shared.enums import JobStatus
 from processiq_shared.events import (
     SUBJECT_JOB_COMPLETED,
@@ -20,15 +23,19 @@ from processiq_shared.models import JobView, ScreenPerception
 from processiq_shared.state import AgentState, JobContext
 
 
-def run_job(job: JobView) -> JobView:
+def _vlm_available() -> bool:
+    return bool(os.getenv("HOSTED_VLM_BASE_URL") and os.getenv("HOSTED_VLM_API_KEY"))
+
+
+def run_job(job: JobView, options: dict[str, Any] | None = None) -> JobView:
+    options = options or {}
     process = store.processes.get(job.process_id, {})
     artifacts = process.get("artifacts", [])
     screens = [
         ScreenPerception(artifact_id=a["id"], order=a.get("order", i + 1))
         for i, a in enumerate(artifacts)
     ]
-    # Real uploads carry an object_key; hand agents the resolved paths so Vision/OCR
-    # can run actual models on them (metadata-only artifacts keep the mock path).
+    # Real uploads carry an object_key; hand agents the resolved paths so the models run on them.
     artifact_paths = {
         a["id"]: str(objstore.abspath(a["object_key"]))
         for a in artifacts
@@ -39,7 +46,11 @@ def run_job(job: JobView) -> JobView:
             id=job.id,
             tenant_id=job.tenant_id,
             process_id=job.process_id,
-            plan={"artifact_paths": artifact_paths},
+            plan={
+                "artifact_paths": artifact_paths,
+                "instruction": options.get("instruction", ""),
+                "process_name": process.get("name", ""),
+            },
             confidence_threshold=settings.confidence_threshold,
         ),
         screens=screens,
@@ -54,7 +65,9 @@ def run_job(job: JobView) -> JobView:
         bus.publish(Event(subject=SUBJECT_JOB_STAGE, tenant_id=job.tenant_id, job_id=job.id,
                           payload={"stage": stage, "progress": pct, "message": msg}))
 
-    state = run_pipeline(state, on_progress)
+    # Prefer the real VLM path when a hosted model is configured and we have screenshot files.
+    use_vlm = _vlm_available() and bool(artifact_paths) and options.get("vlm", True)
+    state = (run_vlm_pipeline if use_vlm else run_pipeline)(state, on_progress)
 
     if state.sop:
         store.save_sop(state.sop)
@@ -72,10 +85,10 @@ def run_job(job: JobView) -> JobView:
     return job
 
 
-def run_job_safe(job: JobView) -> JobView:
+def run_job_safe(job: JobView, options: dict[str, Any] | None = None) -> JobView:
     """Background-thread entrypoint: a crash must land in job.error, never vanish."""
     try:
-        return run_job(job)
+        return run_job(job, options)
     except Exception as exc:  # noqa: BLE001
         job.status = JobStatus.FAILED.value
         job.stage = "failed"
