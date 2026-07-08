@@ -147,11 +147,11 @@ function draw() {
   if (highlightBbox) {
     ctx.strokeStyle = "#F59E0B"; ctx.lineWidth = Math.max(4, W / 320);
     const [x, y, w, h] = box(highlightBbox); ctx.strokeRect(x, y, w, h);
-    // scroll the highlighted control into the middle of the viewer
-    const wrap = $("canvas-scroll");
+    // scroll the page so the highlighted control is centered in the window
     requestAnimationFrame(() => {
-      const centerY = (highlightBbox[1] + highlightBbox[3] / 2) * canvas.clientHeight;
-      wrap.scrollTo({ top: centerY - wrap.clientHeight / 2, behavior: "smooth" });
+      const rect = canvas.getBoundingClientRect();
+      const centerY = window.scrollY + rect.top + (highlightBbox[1] + highlightBbox[3] / 2) * canvas.clientHeight;
+      window.scrollTo({ top: centerY - window.innerHeight / 2, behavior: "smooth" });
     });
   }
   $("c-el").textContent = screen.elements.length;
