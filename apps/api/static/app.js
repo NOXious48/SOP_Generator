@@ -145,6 +145,12 @@ function draw() {
   if (highlightBbox) {
     ctx.strokeStyle = "#F59E0B"; ctx.lineWidth = Math.max(4, W / 320);
     const [x, y, w, h] = box(highlightBbox); ctx.strokeRect(x, y, w, h);
+    // scroll the highlighted control into the middle of the viewer
+    const wrap = $("canvas-scroll");
+    requestAnimationFrame(() => {
+      const centerY = (highlightBbox[1] + highlightBbox[3] / 2) * canvas.clientHeight;
+      wrap.scrollTo({ top: centerY - wrap.clientHeight / 2, behavior: "smooth" });
+    });
   }
   $("c-el").textContent = screen.elements.length;
   $("c-ocr").textContent = screen.text.length;
