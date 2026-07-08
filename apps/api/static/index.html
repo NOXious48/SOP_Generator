@@ -3,141 +3,154 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ProcessIQ</title>
+<title>ProcessIQ — Visual Process Intelligence</title>
+<link rel="icon" href="logo.jpeg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: { brand: { blue:'#2563EB', violet:'#7C3AED', cyan:'#06B6D4', ink:'#0F172A', slate:'#475569' } },
+      fontFamily: { sans:['Inter','system-ui','sans-serif'] },
+      boxShadow: { card:'0 1px 3px rgba(15,23,42,.06), 0 8px 24px -12px rgba(15,23,42,.12)' },
+    }},
+  };
+</script>
 <style>
-  :root { --bg:#0b1020; --card:#151b33; --line:#222a49; --ink:#e8ecf7; --muted:#95a0c0;
-          --accent:#6d5efc; --ok:#2fbf71; --warn:#e0a92b; --err:#ef5f6b; --ocr:#22c55e; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:Inter,Segoe UI,system-ui,sans-serif; background:var(--bg); color:var(--ink); }
-  header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
-  .logo { width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#6d5efc,#41d1ff); }
-  h1 { font-size:17px; margin:0; } .sub { color:var(--muted); font-size:12px; }
-  main { max-width:1280px; margin:18px auto; padding:0 18px; display:grid; gap:14px;
-         grid-template-columns:340px 1fr 360px; align-items:start; }
-  .col { display:flex; flex-direction:column; gap:14px; min-width:0; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
-  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:0 0 10px; }
-  button { background:var(--accent); color:#fff; border:0; border-radius:9px; padding:8px 13px;
-           font-weight:600; cursor:pointer; font-size:13px; }
-  button:disabled { opacity:.45; cursor:default; }
-  button.ghost { background:transparent; border:1px solid #33406e; color:var(--ink); }
-  input,select { background:#0e142a; border:1px solid #33406e; color:var(--ink); border-radius:8px;
-                 padding:8px 10px; width:100%; font-size:13px; }
-  .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
-  .muted { color:var(--muted); font-size:12px; }
-  .drop { border:2px dashed #33406e; border-radius:12px; padding:22px; text-align:center;
-          color:var(--muted); font-size:13px; cursor:pointer; transition:border-color .15s; }
-  .drop.over { border-color:var(--accent); color:var(--ink); }
-  .thumbs { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
-  .thumb { position:relative; width:72px; }
-  .thumb img { width:72px; height:48px; object-fit:cover; border-radius:6px; border:1px solid var(--line); }
-  .thumb .n { position:absolute; top:2px; left:4px; font-size:10px; background:#0009; border-radius:4px; padding:0 4px; }
-  .thumb .dup { position:absolute; bottom:2px; left:2px; right:2px; font-size:9px; text-align:center;
-                background:rgba(224,169,43,.85); color:#000; border-radius:4px; }
-  .meter { height:8px; background:#0e142a; border-radius:6px; overflow:hidden; }
-  .meter > div { height:100%; background:linear-gradient(90deg,#6d5efc,#41d1ff); transition:width .3s; }
-  .stage { font-size:12px; color:var(--muted); margin-top:6px; min-height:16px; }
-  .canvas-wrap { position:relative; width:100%; }
-  canvas { width:100%; border-radius:10px; border:1px solid var(--line); display:block; background:#0e142a; }
-  .screen-strip { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-bottom:10px; }
-  .screen-strip img { height:52px; border-radius:6px; border:2px solid var(--line); cursor:pointer; }
-  .screen-strip img.sel { border-color:var(--accent); }
-  .toggles { display:flex; gap:12px; margin:8px 0 0; font-size:12px; color:var(--muted); align-items:center; }
-  .toggles label { display:flex; gap:5px; align-items:center; cursor:pointer; }
-  .legend { width:10px; height:10px; border-radius:3px; display:inline-block; }
-  .step { border:1px solid #2a335c; border-radius:10px; padding:9px 11px; margin-bottom:8px; cursor:pointer; }
-  .step:hover, .step.sel { border-color:var(--accent); }
-  .step .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
-  .step b { font-size:13px; }
-  .badge { font-size:10px; padding:2px 8px; border-radius:20px; white-space:nowrap; }
-  .b-ok { background:rgba(47,191,113,.15); color:var(--ok); }
-  .b-warn { background:rgba(224,169,43,.18); color:var(--warn); }
-  .kpi { display:flex; gap:10px; } .kpi div { flex:1; text-align:center; }
-  .kpi b { font-size:19px; display:block; } .kpi span { font-size:11px; color:var(--muted); }
-  pre { background:#0e142a; padding:10px; border-radius:8px; overflow:auto; font-size:11px; max-height:220px; }
-  table { width:100%; border-collapse:collapse; font-size:11px; }
-  th,td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
-  th { color:var(--muted); font-weight:500; }
-  .status-line { font-size:12px; margin-top:8px; min-height:16px; }
-  .ok { color:var(--ok); } .warn { color:var(--warn); } .err { color:var(--err); }
-  @media (max-width:1100px){ main { grid-template-columns:1fr; } }
+  body { font-family:Inter,system-ui,sans-serif; background:#f6f7fb; color:#0F172A; }
+  .grad { background-image:linear-gradient(135deg,#2563EB 0%,#7C3AED 55%,#06B6D4 100%); }
+  .grad-text { background-image:linear-gradient(135deg,#2563EB,#7C3AED,#06B6D4); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .btn-grad { background-image:linear-gradient(135deg,#2563EB,#7C3AED); }
+  .btn-grad:hover { filter:brightness(1.07); }
+  .card { background:#fff; border:1px solid #eef0f5; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.05), 0 10px 30px -18px rgba(15,23,42,.18); }
+  .field { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:9px 12px; width:100%; font-size:13px; color:#0F172A; transition:border-color .15s, box-shadow .15s; }
+  .field:focus { outline:none; border-color:#7C3AED; box-shadow:0 0 0 3px rgba(124,58,237,.12); }
+  .eyebrow { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; }
+  .meter { height:8px; background:#eef0f5; border-radius:999px; overflow:hidden; }
+  .meter>div { height:100%; border-radius:999px; background-image:linear-gradient(90deg,#2563EB,#7C3AED,#06B6D4); transition:width .35s ease; }
+  .strip img { height:56px; border-radius:9px; border:2px solid #e2e8f0; cursor:pointer; transition:border-color .15s, transform .1s; }
+  .strip img:hover { transform:translateY(-1px); }
+  .strip img.sel { border-color:#7C3AED; box-shadow:0 0 0 3px rgba(124,58,237,.14); }
+  canvas { width:100%; border-radius:12px; border:1px solid #e2e8f0; display:block; background:#f8fafc; }
+  ::-webkit-scrollbar { height:8px; width:8px; } ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:8px; }
+  .step-card { border:1px solid #eef0f5; border-radius:12px; padding:12px 14px; margin-bottom:10px; cursor:pointer; transition:border-color .15s, box-shadow .15s; }
+  .step-card:hover, .step-card.sel { border-color:#7C3AED; box-shadow:0 6px 18px -12px rgba(124,58,237,.5); }
 </style>
 </head>
-<body>
-<header>
-  <div class="logo"></div>
-  <div><h1>ProcessIQ</h1><div class="sub">Visual Process Understanding &amp; SOP Generation</div></div>
-  <div style="margin-left:auto" class="muted" id="profile-badge"></div>
-</header>
-<main>
-  <!-- LEFT: upload + run -->
-  <div class="col">
-    <div class="card">
-      <h2>1 · Describe &amp; upload</h2>
-      <div class="row"><input id="pname" placeholder="Process name — e.g. Add a candidate in Recruitment" /></div>
-      <div class="row"><textarea id="instruction" rows="3" style="width:100%;background:#0e142a;border:1px solid #33406e;color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical"
-        placeholder="Tell the AI what this process is and what the user is doing across these screens. e.g. 'Log in to OrangeHRM, open Recruitment, and add a new candidate.'"></textarea></div>
-      <div class="drop" id="drop">Drag &amp; drop screenshots (in order) here<br/>or click to browse
-        <input type="file" id="file-input" accept="image/*" multiple hidden />
-      </div>
-      <div class="thumbs" id="thumbs"></div>
-      <div class="status-line muted" id="upload-status">No screenshots yet.</div>
-    </div>
-    <div class="card">
-      <h2>2 · Generate SOP</h2>
-      <div class="row">
-        <button id="run-btn" onclick="runJob()" disabled>Run AI pipeline</button>
-        <button class="ghost" onclick="resetAll()">Reset</button>
-      </div>
-      <div class="meter"><div id="bar" style="width:0%"></div></div>
-      <div class="stage" id="stage"></div>
-      <div class="status-line" id="job-status"></div>
-    </div>
-    <div class="card">
-      <h2>Agent trace</h2>
-      <table id="trace"><thead><tr><th>Agent</th><th>Model</th><th>ms</th><th></th></tr></thead><tbody></tbody></table>
+<body class="min-h-screen">
+
+<!-- HEADER -->
+<header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
+  <div class="max-w-[1360px] mx-auto px-6 h-16 flex items-center gap-4">
+    <img src="logo.jpeg" alt="ProcessIQ" class="h-9" />
+    <span class="hidden md:inline text-[13px] text-slate-400 border-l border-slate-200 pl-4">Visual Process Understanding &amp; SOP Generation</span>
+    <div class="ml-auto flex items-center gap-3">
+      <span id="profile-badge" class="text-[12px] font-medium text-slate-500 bg-slate-100 rounded-full px-3 py-1"></span>
+      <span class="grad text-white text-[12px] font-semibold rounded-full px-3 py-1">AI Ready</span>
     </div>
   </div>
+</header>
 
-  <!-- CENTER: screen viewer -->
-  <div class="col">
-    <div class="card">
-      <h2>3 · Visual perception</h2>
-      <div class="screen-strip" id="strip"></div>
-      <div class="canvas-wrap"><canvas id="canvas" width="16" height="9"></canvas></div>
-      <div class="toggles">
-        <label><input type="checkbox" id="t-el" checked onchange="draw()" />
-          <span class="legend" style="background:#6d5efc"></span> Elements (<span id="c-el">0</span>)</label>
-        <label><input type="checkbox" id="t-ocr" checked onchange="draw()" />
-          <span class="legend" style="background:#22c55e"></span> OCR text (<span id="c-ocr">0</span>)</label>
-        <span id="sel-info" class="muted"></span>
+<main class="max-w-[1360px] mx-auto px-6 py-6 grid gap-5 items-start" style="grid-template-columns:360px 1fr 380px;">
+
+  <!-- LEFT: describe + upload + run + trace -->
+  <div class="flex flex-col gap-5 min-w-0">
+    <section class="card p-5">
+      <div class="eyebrow mb-3">1 · Describe &amp; Upload</div>
+      <input id="pname" class="field mb-2" placeholder="Process name — e.g. Add a candidate in Recruitment" />
+      <textarea id="instruction" rows="3" class="field mb-3" style="resize:vertical;font-family:inherit"
+        placeholder="Tell the AI what this process is — e.g. 'Log in to OrangeHRM, open Recruitment, and add a new candidate.'"></textarea>
+      <div id="drop" class="rounded-xl border-2 border-dashed border-slate-300 hover:border-brand-violet transition p-5 text-center text-[13px] text-slate-500 cursor-pointer">
+        <div class="grad-text font-semibold">Drag &amp; drop screenshots</div>
+        <div class="text-slate-400 mt-0.5">in workflow order · or click to browse</div>
+        <input type="file" id="file-input" accept="image/*" multiple hidden />
       </div>
-    </div>
+      <div id="thumbs" class="flex flex-wrap gap-2 mt-3"></div>
+      <div id="upload-status" class="text-[12px] text-slate-400 mt-3">No screenshots yet.</div>
+    </section>
+
+    <section class="card p-5">
+      <div class="eyebrow mb-3">2 · Generate SOP</div>
+      <div class="flex gap-2 mb-3">
+        <button id="run-btn" onclick="runJob()" disabled
+          class="btn-grad text-white text-[13px] font-semibold rounded-lg px-4 py-2 disabled:opacity-40 disabled:cursor-default">Run AI pipeline</button>
+        <button onclick="resetAll()" class="text-[13px] font-medium text-slate-600 border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">Reset</button>
+      </div>
+      <div class="meter"><div id="bar" style="width:0%"></div></div>
+      <div id="stage" class="text-[12px] text-slate-400 mt-2 min-h-[16px]"></div>
+      <div id="job-status" class="text-[12px] mt-1 min-h-[16px]"></div>
+    </section>
+
+    <section class="card p-5">
+      <div class="eyebrow mb-3">Agent Trace</div>
+      <table class="w-full text-[12px]" id="trace">
+        <thead><tr class="text-slate-400 text-left"><th class="font-medium pb-1">Agent</th><th class="font-medium pb-1">Model</th><th class="font-medium pb-1">ms</th><th class="font-medium pb-1"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- CENTER: perception viewer -->
+  <div class="flex flex-col gap-5 min-w-0">
+    <section class="card p-5">
+      <div class="eyebrow mb-3">3 · Visual Perception</div>
+
+      <!-- empty state (cover hero) -->
+      <div id="viewer-empty" class="text-center">
+        <img src="cover.jpeg" alt="ProcessIQ" class="w-full rounded-xl border border-slate-100" />
+        <p class="text-[13px] text-slate-500 mt-4 max-w-md mx-auto">
+          Upload screenshots and describe your process. ProcessIQ detects UI elements, understands the
+          workflow, and generates a grounded, step-by-step SOP with the exact controls to click.
+        </p>
+      </div>
+
+      <!-- populated after a run -->
+      <div id="viewer-content" class="hidden">
+        <div class="strip flex gap-2 overflow-x-auto pb-2 mb-3" id="strip"></div>
+        <div class="relative"><canvas id="canvas" width="16" height="9"></canvas></div>
+        <div class="flex items-center gap-4 mt-3 text-[12px] text-slate-500">
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="t-el" checked onchange="draw()" class="accent-brand-violet" />
+            <span class="inline-block w-2.5 h-2.5 rounded" style="background:#7C3AED"></span> Elements (<span id="c-el">0</span>)</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="t-ocr" checked onchange="draw()" class="accent-brand-cyan" />
+            <span class="inline-block w-2.5 h-2.5 rounded" style="background:#06B6D4"></span> OCR text (<span id="c-ocr">0</span>)</label>
+          <span id="sel-info" class="text-slate-400 ml-auto"></span>
+        </div>
+      </div>
+    </section>
   </div>
 
   <!-- RIGHT: SOP -->
-  <div class="col">
-    <div class="card">
-      <div class="kpi">
-        <div><b id="k-steps">–</b><span>Steps</span></div>
-        <div><b id="k-conf">–</b><span>Confidence</span></div>
-        <div><b id="k-state">–</b><span>State</span></div>
+  <div class="flex flex-col gap-5 min-w-0">
+    <section class="card p-4">
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="rounded-xl bg-slate-50 py-3"><div id="k-steps" class="text-xl font-bold grad-text">–</div><div class="text-[11px] text-slate-400">Steps</div></div>
+        <div class="rounded-xl bg-slate-50 py-3"><div id="k-conf" class="text-xl font-bold grad-text">–</div><div class="text-[11px] text-slate-400">Confidence</div></div>
+        <div class="rounded-xl bg-slate-50 py-3"><div id="k-state" class="text-xl font-bold grad-text">–</div><div class="text-[11px] text-slate-400">State</div></div>
       </div>
-    </div>
-    <div class="card">
-      <h2>4 · Generated SOP</h2>
-      <div id="sop-title" class="muted">Run the pipeline to generate an SOP.</div>
-      <div id="steps" style="margin-top:8px"></div>
-      <div class="row" style="margin-top:10px">
-        <button class="ghost" onclick="publish()">Publish</button>
-        <select id="fmt"><option>markdown</option><option>html</option><option>json</option>
-          <option>bpmn</option><option>testcases</option><option>rpa</option><option>docx</option><option>pdf</option></select>
-        <button class="ghost" onclick="doExport()">Export</button>
+    </section>
+
+    <section class="card p-5">
+      <div class="eyebrow mb-3">4 · Generated SOP</div>
+      <div id="sop-title" class="text-[13px] text-slate-400">Run the pipeline to generate an SOP.</div>
+      <div id="steps" class="mt-3"></div>
+      <div class="flex flex-wrap gap-2 mt-3 items-center">
+        <button onclick="publish()" class="text-[13px] font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50">Publish</button>
+        <select id="fmt" class="field" style="width:auto">
+          <option>pdf</option><option>html</option><option>markdown</option><option>docx</option>
+          <option>json</option><option>bpmn</option><option>testcases</option><option>rpa</option>
+        </select>
+        <button onclick="doExport()" class="btn-grad text-white text-[13px] font-semibold rounded-lg px-4 py-2">Export</button>
       </div>
-      <pre id="out" style="margin-top:10px; display:none"></pre>
-    </div>
+      <pre id="out" class="hidden mt-3 bg-slate-900 text-slate-100 rounded-xl p-3 text-[11px] overflow-auto" style="max-height:220px"></pre>
+    </section>
   </div>
 </main>
+
+<footer class="max-w-[1360px] mx-auto px-6 py-6 text-center text-[11px] text-slate-400">
+  From visuals to value. Automated · Intelligent · Actionable. — ProcessIQ
+</footer>
+
 <script src="app.js"></script>
 </body>
 </html>

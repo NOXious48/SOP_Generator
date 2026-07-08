@@ -21,10 +21,11 @@ async function api(path, opts = {}) {
 
 // ---------- upload ----------
 const drop = $("drop"), fileInput = $("file-input");
+const OVER = ["bg-violet-50", "border-brand-violet"];
 drop.onclick = () => fileInput.click();
-drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
-drop.ondragleave = () => drop.classList.remove("over");
-drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); };
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add(...OVER); };
+drop.ondragleave = () => drop.classList.remove(...OVER);
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove(...OVER); addFiles(e.dataTransfer.files); };
 fileInput.onchange = () => addFiles(fileInput.files);
 
 async function ensureProcess() {
@@ -45,12 +46,15 @@ async function addFiles(fileList) {
       const body = await r.json();
       if (!r.ok) { setStatus("upload-status", `✗ ${f.name}: ${body.detail || r.status}`, "err"); continue; }
       const div = document.createElement("div");
-      div.className = "thumb";
+      div.className = "relative w-[70px]";
+      const url = URL.createObjectURL(f);
       if (body.deduplicated) {
-        div.innerHTML = `<img src="${URL.createObjectURL(f)}" /><span class="dup">duplicate</span>`;
+        div.innerHTML = `<img src="${url}" class="w-[70px] h-[46px] object-cover rounded-md border border-slate-200 opacity-60" />
+          <span class="absolute inset-x-0 bottom-0 text-[9px] text-center bg-amber-400 text-slate-900 rounded-b-md">duplicate</span>`;
       } else {
         artifacts.push({ id: body.artifactId, order: body.order, filename: f.name });
-        div.innerHTML = `<img src="${URL.createObjectURL(f)}" /><span class="n">${body.order}</span>`;
+        div.innerHTML = `<img src="${url}" class="w-[70px] h-[46px] object-cover rounded-md border border-slate-200" />
+          <span class="absolute top-1 left-1 text-[10px] text-white bg-slate-900/70 rounded px-1">${body.order}</span>`;
       }
       $("thumbs").appendChild(div);
     }
@@ -98,6 +102,8 @@ async function pollJob() {
 async function loadPerception() {
   const p = await api(`/v1/jobs/${jobId}/perception`);
   screens = p.screens;
+  $("viewer-empty").classList.add("hidden");     // swap the cover hero for the live viewer
+  $("viewer-content").classList.remove("hidden");
   const strip = $("strip");
   strip.innerHTML = "";
   for (const s of screens) {
@@ -129,15 +135,15 @@ function draw() {
   const W = canvas.width, Hh = canvas.height;
   const box = (b) => [b[0] * W, b[1] * Hh, b[2] * W, b[3] * Hh];
   if ($("t-el").checked) {
-    ctx.strokeStyle = "#6d5efc"; ctx.lineWidth = Math.max(2, W / 700);
+    ctx.strokeStyle = "#7C3AED"; ctx.lineWidth = Math.max(2, W / 700);
     for (const el of screen.elements) { const [x, y, w, h] = box(el.bbox); ctx.strokeRect(x, y, w, h); }
   }
   if ($("t-ocr").checked) {
-    ctx.strokeStyle = "#22c55e"; ctx.lineWidth = Math.max(1, W / 1000);
+    ctx.strokeStyle = "#06B6D4"; ctx.lineWidth = Math.max(1, W / 1000);
     for (const t of screen.text) { const [x, y, w, h] = box(t.bbox); ctx.strokeRect(x, y, w, h); }
   }
   if (highlightBbox) {
-    ctx.strokeStyle = "#e0a92b"; ctx.lineWidth = Math.max(4, W / 350);
+    ctx.strokeStyle = "#F59E0B"; ctx.lineWidth = Math.max(4, W / 320);
     const [x, y, w, h] = box(highlightBbox); ctx.strokeRect(x, y, w, h);
   }
   $("c-el").textContent = screen.elements.length;
@@ -155,12 +161,15 @@ async function loadSop() {
   $("k-state").textContent = sop.state;
   $("steps").innerHTML = sop.steps.map((s) => {
     const flagged = (s.flags || []).length > 0;
-    const badge = flagged ? `<span class="badge b-warn">needs review</span>` : `<span class="badge b-ok">ok</span>`;
+    const badge = flagged
+      ? `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 whitespace-nowrap">needs review</span>`
+      : `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">ok</span>`;
     const ref = s.screenshot_ref ? `data-art="${s.screenshot_ref.artifact_id}" data-bbox="${s.screenshot_ref.bbox.join(",")}"` : "";
-    return `<div class="step" ${ref} onclick="stepClick(this)"><div class="top"><b>${s.no}. ${esc(s.action)}</b>${badge}</div>
-      <div class="muted">${esc(s.description)}</div>
-      <div class="meter" style="margin-top:6px"><div style="width:${Math.round(s.confidence * 100)}%"></div></div>
-      ${flagged ? `<button class="ghost" style="margin-top:8px" onclick="event.stopPropagation();approve(${s.no})">Approve step</button>` : ""}
+    return `<div class="step-card" ${ref} onclick="stepClick(this)">
+      <div class="flex justify-between items-center gap-2"><b class="text-[13px]">${s.no}. ${esc(s.action)}</b>${badge}</div>
+      <div class="text-[12px] text-slate-500 mt-1 whitespace-pre-line">${esc(s.description)}</div>
+      <div class="meter mt-2"><div style="width:${Math.round(s.confidence * 100)}%"></div></div>
+      ${flagged ? `<button class="mt-2 text-[12px] font-medium text-brand-violet border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50" onclick="event.stopPropagation();approve(${s.no})">Approve step</button>` : ""}
     </div>`;
   }).join("");
 }
@@ -214,12 +223,21 @@ async function doExport() {
 async function loadTrace() {
   const t = await api(`/v1/jobs/${jobId}/trace`);
   $("trace").querySelector("tbody").innerHTML = t.events.map((e) =>
-    `<tr><td>${e.agent}</td><td>${e.model || ""}</td><td>${Math.round(e.latency_ms)}</td>
-     <td class="${e.status === "ok" ? "ok" : "err"}">${e.status}</td></tr>`).join("");
+    `<tr class="border-t border-slate-100">
+       <td class="py-1 text-slate-700">${e.agent}</td>
+       <td class="py-1 text-slate-400">${e.model || ""}</td>
+       <td class="py-1 text-slate-500">${Math.round(e.latency_ms)}</td>
+       <td class="py-1 font-medium ${e.status === "ok" ? "text-emerald-600" : "text-red-500"}">${e.status}</td>
+     </tr>`).join("");
 }
 
 // ---------- misc ----------
-function setStatus(id, msg, cls) { const el = $(id); el.textContent = msg; el.className = "status-line " + (cls || "muted"); }
+function setStatus(id, msg, cls) {
+  const el = $(id);
+  el.textContent = msg;
+  const color = { ok: "text-emerald-600", warn: "text-amber-600", err: "text-red-500" }[cls] || "text-slate-400";
+  el.className = "text-[12px] mt-1 " + color;
+}
 function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
 function resetAll() { location.reload(); }
 
