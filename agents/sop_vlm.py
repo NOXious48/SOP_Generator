@@ -153,50 +153,67 @@ class VlmSopGenerationAgent(Agent):
             provenance=Provenance(models=[self.model], prompt_versions=["vlm-sop-v1"]),
         )
 
-    def _ground_bbox(self, image_path, target, vlm_box):
-        """Combine VLM + OCR: crop-OCR around the VLM box and snap onto the target label's pixels.
+    _ocr_cache: dict[str, list] = {}
 
-        Returns the OCR-precise box when the target text is found near the VLM box, else the VLM
-        box unchanged. Fails safe (any error -> VLM box) so generation never breaks.
+    def _ground_bbox(self, image_path, target, vlm_box):
+        """Combine VLM + OCR: full-image OCR (accurate server model), then snap the box onto the
+        OCR region that best matches the target label, disambiguated by nearest to the VLM box.
+
+        A match must clear a similarity threshold; otherwise the VLM box is kept. Fails safe (any
+        error -> VLM box) so generation never breaks.
         """
         if not image_path or not target:
             return vlm_box
         target_norm = self._norm_text(target)
         if len(target_norm) < 2:
             return vlm_box
-        try:
-            from apps.inference_gateway.adapters import ocr_region
-        except Exception:
-            return vlm_box
-        crop = self._search_crop(vlm_box)
-        try:
-            regions = ocr_region(image_path, crop)
-        except Exception:
+        regions = self._ocr_full(image_path)
+        if not regions:
             return vlm_box
         vx, vy = vlm_box[0] + vlm_box[2] / 2, vlm_box[1] + vlm_box[3] / 2
-        best, best_d = None, 1e9
+        best, best_key = None, (0.0, 1e9)
         for r in regions:
-            rt = self._norm_text(r["text"])
-            if not rt or (target_norm not in rt and rt not in target_norm):
+            sim = self._similarity(target_norm, self._norm_text(r["text"]))
+            if sim < 0.5:
                 continue
             rb = r["bbox"]
             d = ((rb[0] + rb[2] / 2) - vx) ** 2 + ((rb[1] + rb[3] / 2) - vy) ** 2
-            if d < best_d:
-                best, best_d = rb, d
+            # prefer higher similarity, then nearer to the VLM box
+            key = (sim, -d)
+            if key > (best_key[0], -best_key[1]):
+                best, best_key = rb, (sim, d)
         return best or vlm_box
 
+    @classmethod
+    def _ocr_full(cls, image_path: str) -> list:
+        """Full-image OCR, memoized per image (same screenshot backs many steps)."""
+        if image_path in cls._ocr_cache:
+            return cls._ocr_cache[image_path]
+        try:
+            from apps.inference_gateway.adapters import ocr_local
+
+            regions = ocr_local(image_path)
+        except Exception:
+            regions = []
+        cls._ocr_cache[image_path] = regions
+        return regions
+
     @staticmethod
-    def _search_crop(box) -> list[float]:
-        """Region to OCR around the VLM box. Gemini's boxes read systematically too HIGH, so the
-        crop reaches much further below the box than above it (evidence: Login->Password,
-        Recruitment->Time were all one element too high)."""
-        x, y, w, h = box
-        cx, cy = x + w / 2, y + h / 2
-        half_w = max(w / 2 + 0.12, 0.20)
-        top = max(0.0, cy - 0.09)
-        bottom = min(1.0, cy + 0.24)
-        nx = max(0.0, cx - half_w)
-        return [nx, top, min(2 * half_w, 1 - nx), bottom - top]
+    def _similarity(a: str, b: str) -> float:
+        """Text-match score in [0,1]: exact > containment > token overlap."""
+        if not a or not b:
+            return 0.0
+        if a == b:
+            return 1.0
+        if a in b or b in a:
+            shorter, longer = sorted((a, b), key=len)
+            return 0.9 * len(shorter) / len(longer)
+        # character-bigram overlap (robust to minor OCR noise)
+        ba = {a[i:i + 2] for i in range(len(a) - 1)}
+        bb = {b[i:i + 2] for i in range(len(b) - 1)}
+        if not ba or not bb:
+            return 0.0
+        return len(ba & bb) / len(ba | bb)
 
     @staticmethod
     def _norm_text(s: str) -> str:
