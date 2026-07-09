@@ -21,6 +21,10 @@ pymongo==4.10.1
 # preprocessing / perception (CPU, no GPU)
 pillow==11.0.0
 
+# OCR box-grounding (CPU). Heavy — only needed when GROUND_BBOX=1.
+paddlepaddle==3.3.1
+paddleocr==3.7.0
+
 # exports
 python-docx==1.1.2
 reportlab==4.2.5
@@ -33,3 +37,4 @@ prometheus-client==0.21.1
 pytest==8.3.4
 pytest-asyncio==0.24.0
 ruff==0.8.3
+
