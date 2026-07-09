@@ -31,6 +31,7 @@ _From visuals to value. Automated · Intelligent · Actionable._
    - [8.2 User features](#82-user-features)
    - [8.3 Platform features (shared)](#83-platform-features-shared)
 9. [The Generated SOP — document format](#9-the-generated-sop--document-format)
+   - [How the confidence score is computed](#how-the-confidence-score-is-computed)
 10. [API Reference](#10-api-reference)
 11. [Configuration Reference](#11-configuration-reference)
 12. [Project Structure](#12-project-structure)
@@ -506,6 +507,55 @@ Process: <name>
 6. OUTPUT               — the expected final result on success
 7. CONFIDENCE SCORE     — overall confidence in the reconstructed workflow
 ```
+
+### How the confidence score is computed
+
+ProcessIQ does not hand you a black-box number. The **CONFIDENCE SCORE** is the output of a
+**multi-signal, evidence-anchored assurance model** that fuses the model's own epistemic certainty
+with independent grounding checks, then aggregates them into a single calibrated reliability index.
+
+**1 · Per-step epistemic confidence.** For every reconstructed step _i_, the vision-language model
+emits a **self-calibrated certainty** `cᵢ ∈ [0, 1]` — its posterior belief that the step (action,
+target control, and expected system response) faithfully reflects the evidence in the screenshots.
+The value is clamped to a safe range so no single step can dominate or collapse the aggregate.
+
+**2 · Grounding verification (hallucination guard).** Each step must be **anchored to real visual
+evidence** — a concrete screenshot region (`screenshot_ref`). A validation pass checks that this
+anchor resolves to an actual uploaded artifact; any step that cites evidence which does not exist is
+marked **`POSSIBLE_HALLUCINATION`**, and the SOP's `grounded` invariant flips to false. Ungrounded
+steps cannot silently inflate the score.
+
+**3 · OCR corroboration (when box-grounding is enabled).** The label of the cited control is
+independently **cross-verified against the OCR text layer** using a lexical-similarity measure
+(exact → containment → token-overlap). A candidate must clear a similarity threshold to snap the
+click-box onto the exact control; otherwise the system **fails safe** and retains the model's
+original region rather than fabricating precision.
+
+**4 · Threshold gating (human-in-the-loop).** Every step is tested against a configurable acceptance
+threshold **τ = `CONFIDENCE_THRESHOLD` (default 0.75)**. Any step with `cᵢ < τ` is flagged
+**`LOW_CONFIDENCE`** and routed into the review queue — and **any** flagged step forces the whole SOP
+into a `NEEDS_REVIEW` state, independent of the numeric score, so a high average can never mask a
+weak step.
+
+**5 · Aggregation into the reliability index.** The overall confidence is the **expected per-step
+reliability** — the normalized aggregate of the grounded per-step certainties over the _N_ steps:
+
+```
+                    1   N
+overall_confidence = ─ · Σ  cᵢ            cᵢ ∈ [0, 1],  reported as a percentage
+                    N  i=1
+```
+
+The result is surfaced as a percentage and bucketed into a **calibrated assurance band**:
+
+| Band | Range | Meaning |
+| --- | --- | --- |
+| **High** | ≥ 80% | strongly grounded; safe to publish after a glance |
+| **Moderate** | 60–79% | usable; review the flagged steps |
+| **Low** | < 60% | reconstruct-and-verify; likely missing/ambiguous evidence |
+
+Because the index is **recomputed on every edit, refine, and regeneration**, it stays live: correct a
+weak step and the reliability rises; the grounding and threshold layers keep it honest.
 
 ---
 

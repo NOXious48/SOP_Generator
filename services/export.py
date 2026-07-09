@@ -9,6 +9,7 @@ import base64
 import io
 import json
 from collections.abc import Callable
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from processiq_shared.models import SOP, SopStep
@@ -262,56 +263,260 @@ def _docx(sop: SOP, image_loader: ImageLoader | None = None) -> bytes:
     return buf.getvalue()
 
 
+# ---------- branded PDF template (cover + header/footer chrome), owner: Pushp ----------
+# Brand palette (matches the web UI / template.pdf).
+_INK = "#0F172A"
+_VIOLET = "#7C3AED"
+_BLUE = "#2563EB"
+_CYAN = "#06B6D4"
+_SLATE = "#475569"
+_MUTED = "#94A3B8"
+_CARD_BG = "#F8FAFC"
+_BORDER = "#E2E8F0"
+_BADGE = "#EDE9FE"
+_LOGO_PATH = Path(__file__).resolve().parents[1] / "apps" / "api" / "static" / "logo.jpeg"
+
+
+def _trunc(text: str, n: int) -> str:
+    text = " ".join((text or "").split())
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
 def _pdf(sop: SOP, image_loader: ImageLoader | None = None) -> bytes:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet
+    from datetime import UTC, datetime
+
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
     from reportlab.platypus import (
+        BaseDocTemplate,
+        Frame,
         Image,
+        KeepTogether,
         ListFlowable,
         ListItem,
+        NextPageTemplate,
+        PageBreak,
+        PageTemplate,
         Paragraph,
-        SimpleDocTemplate,
         Spacer,
     )
 
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4)
-    st = getSampleStyleSheet()
-    cell = st["BodyText"]
-    max_w = A4[0] - 72  # page width minus margins
+    W, H = landscape(A4)                 # 841.89 x 595.28
+    INK, VIOLET, BLUE, CYAN = HexColor(_INK), HexColor(_VIOLET), HexColor(_BLUE), HexColor(_CYAN)
+    SLATE, MUTED = HexColor(_SLATE), HexColor(_MUTED)
+    CARD_BG, BORDER, BADGE = HexColor(_CARD_BG), HexColor(_BORDER), HexColor(_BADGE)
+    now = datetime.now(UTC)
+    pct = _conf_pct(sop)
+
+    M = {
+        "project": sop.title or "Untitled Process",
+        "process_id": sop.process_id,
+        "version": str(sop.version),
+        "date_time": now.strftime("%d %b %Y, %H:%M UTC"),
+        "date": now.strftime("%d %b %Y"),
+        "status": sop.state.value,
+        "confidence": f"{pct}% — {_conf_label(pct)}",
+        "doc_id": sop.id,
+        "client": _trunc((sop.tenant_id or "Internal").replace("_", " ").title(), 26),
+    }
+
+    def _logo(c, x, y, w):
+        try:
+            ir = ImageReader(str(_LOGO_PATH))
+            iw, ih = ir.getSize()
+            c.drawImage(ir, x, y, width=w, height=w * ih / iw, mask="auto")
+        except Exception:  # noqa: BLE001 - logo is decorative; never fail the export
+            pass
+
+    def _footer(c):
+        c.setFillColor(BLUE)
+        c.rect(0, 0, W, 30, stroke=0, fill=1)
+        c.setFillColor(HexColor("#DBEAFE"))
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(40, 11, "FROM VISUALS TO VALUE.  AUTOMATED.  INTELLIGENT.  ACTIONABLE.")
+        c.drawRightString(W - 40, 11, "Confidential | Internal Use Only")
+
+    def _circles(c, cx, cy):
+        c.setStrokeColor(HexColor("#EEF2FF"))
+        c.setLineWidth(1.2)
+        for r in (34, 60, 88, 118):
+            c.circle(cx, cy, r, stroke=1, fill=0)
+
+    def draw_cover(c, _doc):
+        # corner motif (mostly off-page → shows as a soft arc)
+        c.setFillColor(VIOLET)
+        c.circle(W + 20, -10, 90, stroke=0, fill=1)
+        c.setFillColor(CYAN)
+        c.circle(W - 8, -22, 55, stroke=0, fill=1)
+        _circles(c, W - 18, H - 26)
+        _footer(c)
+        _logo(c, 40, 486, 238)
+        c.setStrokeColor(CYAN)
+        c.setLineWidth(3)
+        c.line(40, 470, 430, 470)
+        # title: "SOP DOCUMENT"
+        c.setFont("Helvetica-Bold", 38)
+        c.setFillColor(INK)
+        c.drawString(40, 412, "SOP ")
+        c.setFillColor(VIOLET)
+        c.drawString(40 + c.stringWidth("SOP ", "Helvetica-Bold", 38), 412, "DOCUMENT")
+        c.setFont("Helvetica", 13)
+        c.setFillColor(SLATE)
+        c.drawString(40, 390, "AI-generated Standard Operating Procedure")
+        c.setStrokeColor(VIOLET)
+        c.setLineWidth(2.5)
+        c.line(40, 381, 320, 381)
+        c.setFillColor(MUTED)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(40, 349, "P R O J E C T   T I T L E")
+        c.setFillColor(INK)
+        c.setFont("Helvetica-Bold", 24)
+        c.drawString(40, 317, _trunc(M["project"], 34))
+        # metadata card
+        cx, cy, cw, ch = 40, 58, 430, 232
+        c.setFillColor(CARD_BG)
+        c.setStrokeColor(BORDER)
+        c.roundRect(cx, cy, cw, ch, 12, stroke=1, fill=1)
+        rows = [("Process ID", M["process_id"]), ("Version", M["version"]),
+                ("Generated On", M["date_time"]), ("Generated By", "ProcessIQ AI Engine"),
+                ("Review Status", M["status"]), ("Overall Confidence", M["confidence"]),
+                ("Document ID", M["doc_id"])]
+        for i, (label, val) in enumerate(rows):
+            ry = cy + ch - 26 - i * 27
+            c.setFillColor(VIOLET)
+            c.circle(cx + 22, ry + 3, 2.4, stroke=0, fill=1)
+            c.setFillColor(INK)
+            c.setFont("Helvetica-Bold", 9.5)
+            c.drawString(cx + 34, ry, label)
+            c.setFillColor(SLATE)
+            c.setFont("Helvetica", 9.5)
+            c.drawString(cx + 158, ry, ": " + _trunc(str(val), 32))
+        # right "prepared for / by" cards
+        def prep_card(y, badge, eyebrow, value):
+            c.setFillColor(HexColor("#FFFFFF"))
+            c.setStrokeColor(BORDER)
+            c.roundRect(505, y, 297, 100, 12, stroke=1, fill=1)
+            c.setFillColor(BADGE)
+            c.roundRect(520, y + 25, 50, 50, 10, stroke=0, fill=1)
+            c.setFillColor(VIOLET)
+            c.setFont("Helvetica-Bold", 15)
+            c.drawCentredString(545, y + 43, badge)
+            c.setFillColor(MUTED)
+            c.setFont("Helvetica-Bold", 8)
+            c.drawString(585, y + 60, eyebrow)
+            c.setFillColor(INK)
+            c.setFont("Helvetica-Bold", 13)
+            c.drawString(585, y + 40, value)
+        prep_card(185, "TO", "PREPARED FOR", M["client"])
+        prep_card(70, "AI", "PREPARED BY", "ProcessIQ AI")
+        c.setFillColor(MUTED)
+        c.setFont("Helvetica", 8)
+        c.drawString(40, 42, "Confidential  |  Internal Use Only")
+
+    def draw_content(c, _doc):
+        _footer(c)
+        _circles(c, W - 18, H - 26)
+        _logo(c, 40, H - 52, 118)
+        cols = [("Process Name", _trunc(M["project"], 22)), ("Process ID", _trunc(M["process_id"], 16)),
+                ("Version", M["version"]), ("Date", M["date"]), ("Classification", "Internal")]
+        xs = [195, 360, 470, 545, 640]
+        for x, (label, val) in zip(xs, cols):
+            c.setFillColor(VIOLET)
+            c.setFont("Helvetica-Bold", 7.5)
+            c.drawString(x, H - 32, label.upper())
+            c.setFillColor(INK)
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(x, H - 46, val)
+        c.setStrokeColor(BORDER)
+        c.setLineWidth(1)
+        c.line(40, H - 62, W - 40, H - 62)
+        # rounded content container
+        c.setStrokeColor(BORDER)
+        c.roundRect(30, 40, W - 60, H - 62 - 44, 14, stroke=1, fill=0)
+
+    # page-number badge (drawn once the total is known)
+    class NumberedCanvas(canvas.Canvas):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            self._pages: list[dict] = []
+
+        def showPage(self):
+            self._pages.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._pages)
+            for state in self._pages:
+                self.__dict__.update(state)
+                if self._pageNumber > 1:      # cover has no page badge
+                    self.setFillColor(VIOLET)
+                    self.roundRect(W - 118, H - 52, 78, 32, 7, stroke=0, fill=1)
+                    self.setFillColor(HexColor("#FFFFFF"))
+                    self.setFont("Helvetica", 7)
+                    self.drawCentredString(W - 79, H - 30, "PAGE")
+                    self.setFont("Helvetica-Bold", 10)
+                    self.drawCentredString(W - 79, H - 43, f"{self._pageNumber} of {total}")
+                super().showPage()
+            super().save()
+
+    # ---- styles + flowables (the 7-section SOP body) ----
+    h_sec = ParagraphStyle("Sec", fontName="Helvetica-Bold", fontSize=13, textColor=VIOLET,
+                           spaceBefore=12, spaceAfter=5, leading=16)
+    h_step = ParagraphStyle("Step", fontName="Helvetica-Bold", fontSize=11, textColor=INK,
+                            spaceBefore=8, spaceAfter=2, leading=14)
+    body = ParagraphStyle("Body", fontName="Helvetica", fontSize=10, textColor=HexColor("#1F2937"),
+                          leading=14)
+    flag_st = ParagraphStyle("Flag", parent=h_step, textColor=HexColor("#B45309"))
+
+    frame_w = W - 96
+    frame_h = (H - 90) - 58
 
     def bullets(items: list[str], empty: str) -> ListFlowable:
         items = items or [empty]
-        return ListFlowable([ListItem(Paragraph(escape(x), cell)) for x in items],
+        return ListFlowable([ListItem(Paragraph(escape(x), body)) for x in items],
                             bulletType="bullet", leftIndent=14)
 
-    flow = [Paragraph(DOC_TITLE, st["Title"]),
-            Paragraph(f"<b>Process:</b> {escape(sop.title)}", st["Heading2"]),
-            Paragraph(escape(_meta_block(sop)), st["Italic"]), Spacer(1, 10),
-            Paragraph("1. Objective", st["Heading2"]),
-            Paragraph(escape(sop.objective) or "<i>Not specified.</i>", cell), Spacer(1, 6),
-            Paragraph("2. Pre-requisites", st["Heading2"]), bullets(sop.prerequisites, "None"),
-            Spacer(1, 6), Paragraph("3. Step-by-Step Procedure", st["Heading2"]), Spacer(1, 4)]
+    flow = [NextPageTemplate("content"), PageBreak(),
+            Paragraph("1. Objective", h_sec),
+            Paragraph(escape(sop.objective) or "<i>Not specified.</i>", body), Spacer(1, 4),
+            Paragraph("2. Pre-requisites", h_sec), bullets(sop.prerequisites, "None"),
+            Paragraph("3. Step-by-Step Procedure", h_sec)]
 
     for s in sop.steps:  # each step: heading + description paragraph, then its screenshot
-        flag = " <i>(needs review)</i>" if s.flags else ""
-        flow += [Paragraph(f"<b>Step {s.no}: {escape(s.action)}</b>{flag}", st["Heading3"]),
-                 Paragraph(escape(s.description).replace("\n", "<br/>"), cell)]
+        style = flag_st if s.flags else h_step
+        flag = "  (needs review)" if s.flags else ""
+        block = [Paragraph(f"Step {s.no}: {escape(s.action)}{flag}", style),
+                 Paragraph(escape(s.description).replace("\n", "<br/>"), body)]
         img = _step_image(s, image_loader)
         if img:
             iw, ih = ImageReader(io.BytesIO(img)).getSize()
-            w = min(max_w, iw)
-            flow += [Spacer(1, 4), Image(io.BytesIO(img), width=w, height=ih * w / iw)]
-        flow.append(Spacer(1, 10))
+            w = min(frame_w, iw)
+            h = ih * w / iw
+            if h > frame_h - 78:              # leave room for the heading + description above it
+                h = frame_h - 78
+                w = iw * h / ih
+            block += [Spacer(1, 4), Image(io.BytesIO(img), width=w, height=h)]
+        # keep a step's heading, description and screenshot together on one page
+        flow += [KeepTogether(block), Spacer(1, 8)]
 
-    flow += [Spacer(1, 8), Paragraph("4. Exception Handling", st["Heading2"]),
-             bullets(sop.exceptions, "None documented."), Spacer(1, 6),
-             Paragraph("5. Validation & Checks", st["Heading2"]),
-             bullets(sop.validation, "None documented."), Spacer(1, 6),
-             Paragraph("6. Output", st["Heading2"]),
-             Paragraph(escape(sop.output) or "<i>Not specified.</i>", cell), Spacer(1, 6),
-             Paragraph("7. Confidence Score", st["Heading2"]),
-             Paragraph(f"<b>{escape(_conf_sentence(sop))}</b>", cell)]
-    doc.build(flow)
+    flow += [Paragraph("4. Exception Handling", h_sec), bullets(sop.exceptions, "None documented."),
+             Paragraph("5. Validation & Checks", h_sec), bullets(sop.validation, "None documented."),
+             Paragraph("6. Output", h_sec),
+             Paragraph(escape(sop.output) or "<i>Not specified.</i>", body),
+             Paragraph("7. Confidence Score", h_sec),
+             Paragraph(f"<b>{escape(_conf_sentence(sop))}</b>", body)]
+
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(buf, pagesize=(W, H), leftMargin=48, rightMargin=48,
+                          topMargin=90, bottomMargin=58)
+    doc.addPageTemplates([
+        PageTemplate(id="cover", frames=[Frame(40, 40, W - 80, H - 80, id="cover")],
+                     onPage=draw_cover),
+        PageTemplate(id="content", frames=[Frame(48, 58, frame_w, frame_h, id="content")],
+                     onPage=draw_content),
+    ])
+    doc.build(flow, canvasmaker=NumberedCanvas)
     return buf.getvalue()
