@@ -85,10 +85,12 @@ function renderThumbs() {
   $("thumbs-hint").classList.toggle("hidden", artifacts.length === 0);
 }
 
-// remove (event-delegated so it survives re-renders)
+// click ✕ to remove, click the image to open it large (event-delegated so it survives re-renders)
 $("thumbs").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-x]");
-  if (btn) removeArtifact(btn.dataset.x);
+  if (btn) { removeArtifact(btn.dataset.x); return; }
+  const t = e.target.closest(".thumb");
+  if (t) { const a = artifacts[+t.dataset.i]; if (a) openLightbox(a.url, a.filename); }
 });
 // drag reorder
 $("thumbs").addEventListener("dragstart", (e) => {
@@ -100,23 +102,31 @@ $("thumbs").addEventListener("dragover", (e) => e.preventDefault());
 $("thumbs").addEventListener("drop", (e) => {
   e.preventDefault();
   if (dragFrom === null) return;
-  const t = e.target.closest(".thumb");
-  // decide the insertion slot from where in the target we dropped (left half = before, right = after);
-  // dropping in empty space appends to the end.
-  let to = artifacts.length;
-  if (t) {
-    const rect = t.getBoundingClientRect();
-    to = +t.dataset.i + (e.clientX > rect.left + rect.width / 2 ? 1 : 0);
-  }
-  const [moved] = artifacts.splice(dragFrom, 1);
-  if (dragFrom < to) to -= 1;              // removing the dragged item shifts later slots left by one
-  to = Math.max(0, Math.min(to, artifacts.length));
   const from = dragFrom; dragFrom = null;
-  if (to === from) { renderThumbs(); return; }   // no-op drop
+  moveArtifact(from, dropSlot(e.clientX));
+});
+
+// Insertion slot = number of thumbnails whose horizontal midpoint is left of the cursor.
+// Computed against every thumbnail (not just the drop target), so it works dragging in any
+// direction and even when dropping over the gap between thumbnails or past the last one.
+function dropSlot(x) {
+  const thumbs = [...$("thumbs").querySelectorAll(".thumb")];
+  for (let i = 0; i < thumbs.length; i++) {
+    const rect = thumbs[i].getBoundingClientRect();
+    if (x < rect.left + rect.width / 2) return i;
+  }
+  return thumbs.length;
+}
+
+function moveArtifact(from, to) {
+  if (from < to) to -= 1;                   // removing the dragged item shifts later slots left by one
+  to = Math.max(0, Math.min(to, artifacts.length - 1));
+  if (to === from) { renderThumbs(); return; }   // dropped back in place — leave the array untouched
+  const [moved] = artifacts.splice(from, 1);
   artifacts.splice(to, 0, moved);
   renderThumbs();
   syncOrder();
-});
+}
 
 async function syncOrder() {
   if (!processId || !artifacts.length) return;
@@ -191,7 +201,9 @@ function buildViewer() {
   for (const s of screens) {
     const img = document.createElement("img");
     img.src = `/v1/processes/${processId}/artifacts/${s.artifact_id}/image`;
+    img.title = "Click to select · double-click to enlarge";
     img.onclick = () => selectScreen(s.artifact_id);
+    img.ondblclick = () => openLightbox(img.src, `Screen ${s.order}`);
     img.dataset.artifact = s.artifact_id;
     strip.appendChild(img);
     images[s.artifact_id] = img;
@@ -639,6 +651,34 @@ async function openSop(id) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); }
 }
+
+// ---------- image lightbox (click a screenshot to view it full-size) ----------
+function openLightbox(src, caption) {
+  let ov = $("lightbox");
+  if (!ov) {
+    ov = document.createElement("div");
+    ov.id = "lightbox";
+    ov.className = "fixed inset-0 z-50 hidden items-center justify-center bg-black/80 p-6";
+    ov.innerHTML = `
+      <button id="lightbox-close" title="Close (Esc)" class="absolute top-4 right-5 text-white/80 hover:text-white text-3xl leading-none">&times;</button>
+      <figure class="max-w-[92vw] max-h-[92vh] flex flex-col items-center gap-3">
+        <img id="lightbox-img" alt="" class="max-w-full max-h-[82vh] object-contain rounded-lg shadow-2xl bg-white" />
+        <figcaption id="lightbox-cap" class="text-white/80 text-[13px] text-center"></figcaption>
+      </figure>`;
+    document.body.appendChild(ov);
+    // dismiss on backdrop click or the ✕ (clicking the image itself does nothing)
+    ov.addEventListener("click", (e) => { if (e.target === ov || e.target.id === "lightbox-close") closeLightbox(); });
+  }
+  $("lightbox-img").src = src;
+  $("lightbox-cap").textContent = caption || "";
+  ov.classList.remove("hidden");
+  ov.classList.add("flex");
+}
+function closeLightbox() {
+  const ov = $("lightbox");
+  if (ov) { ov.classList.add("hidden"); ov.classList.remove("flex"); }
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
 
 // ---------- misc ----------
 function setStatus(id, msg, cls) {
