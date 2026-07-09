@@ -79,10 +79,14 @@
       <div id="drop" class="rounded-xl border-2 border-dashed border-slate-300 hover:border-brand-violet transition p-5 text-center text-[13px] text-slate-500 cursor-pointer">
         <div class="grad-text font-semibold">Drag &amp; drop screenshots</div>
         <div class="text-slate-400 mt-0.5">in workflow order · or click to browse</div>
-        <input type="file" id="file-input" accept="image/*" multiple hidden />
+        <div class="text-slate-300 text-[11px] mt-1">PNG · JPG · JPEG · WEBP · GIF · BMP</div>
+        <input type="file" id="file-input"
+          accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp"
+          multiple hidden />
       </div>
       <div id="thumbs" class="flex flex-wrap gap-2 mt-3"></div>
       <div id="upload-status" class="text-[12px] text-slate-400 mt-3">No screenshots yet.</div>
+      <div id="thumbs-hint" class="text-[11px] text-slate-400 mt-1 hidden">Drag to reorder · hover a thumbnail and click ✕ to remove.</div>
     </section>
 
     <section class="card p-5">
@@ -151,7 +155,11 @@
         </span>
       </div>
       <div id="sop-title" class="text-[13px] text-slate-400">Run the pipeline to generate an SOP.</div>
-      <div id="steps" class="mt-3"></div>
+      <div id="sop-objective" class="text-[12px] text-slate-500 mt-1"></div>
+      <div id="sop-prereqs" class="mt-3"></div>
+      <div id="sop-steps-label" class="eyebrow mt-4 mb-1 hidden">Step-by-step procedure</div>
+      <div id="steps" class="mt-1"></div>
+      <div id="sop-extra" class="mt-3"></div>
       <div class="flex flex-wrap gap-2 mt-3 items-center">
         <button onclick="publish()" class="text-[13px] font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50">Publish</button>
         <select id="fmt" class="field" style="width:auto">
@@ -173,6 +181,18 @@
     <section class="card p-5">
       <div class="eyebrow mb-2">Version history</div>
       <div id="versions"><div class="text-[12px] text-slate-400">No versions yet.</div></div>
+    </section>
+
+    <section class="card p-5">
+      <div class="eyebrow mb-2">UI drift check</div>
+      <p class="text-[12px] text-slate-500 mb-2">Upload the <b>current</b> screenshots of this process. ProcessIQ compares them
+        to the ones this SOP was built from and flags any screens that changed — so you can keep the SOP accurate as the UI evolves.</p>
+      <div id="drift-drop" class="border-2 border-dashed border-slate-200 rounded-lg p-3 text-center text-[12px] text-slate-400 cursor-pointer hover:border-brand-violet hover:bg-violet-50 transition">
+        Drop or click to upload updated screenshots
+      </div>
+      <input id="drift-input" type="file" accept="image/*" multiple class="hidden" />
+      <div id="drift-status" class="text-[12px] mt-2"></div>
+      <div id="drift-report" class="mt-2 hidden"></div>
     </section>
 
     <section class="card p-5">

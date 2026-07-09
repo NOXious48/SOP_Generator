@@ -6,6 +6,7 @@ preprocessing (Pillow), perceptual-hash de-duplication, and object-store persist
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
+from pydantic import BaseModel
 
 from apps.api import audit, objstore
 from apps.api.security_ctx import Principal, require
@@ -15,8 +16,18 @@ from services.preprocess import preprocess_image
 
 router = APIRouter(prefix="/v1/processes", tags=["processes"])
 
-ALLOWED_MIME_PREFIX = ("image/",)
+ALLOWED_MIME_PREFIX = ("image/",)  # any image (png/jpg/jpeg/webp/gif/bmp…) — re-encoded to PNG for Gemini
 MAX_BYTES = 15 * 1024 * 1024  # 15 MB per file
+
+
+class ReorderBody(BaseModel):
+    order: list[str]   # artifact ids in the desired new order
+
+
+def _renumber(proc: dict) -> None:
+    """Reassign 1-based `order` to match current list position."""
+    for i, a in enumerate(sorted(proc["artifacts"], key=lambda x: x.get("order", 0)), start=1):
+        a["order"] = i
 
 
 @router.post("", status_code=201)
@@ -96,3 +107,42 @@ def get_artifact_image(process_id: str, artifact_id: str,
     if not objstore.exists(artifact["object_key"]):
         raise HTTPException(status_code=404, detail="image missing from object store")
     return Response(content=objstore.get(artifact["object_key"]), media_type="image/png")
+
+
+@router.delete("/{process_id}/artifacts/{artifact_id}")
+def delete_artifact(process_id: str, artifact_id: str,
+                    p: Principal = Depends(require("job:create"))) -> dict:
+    """Remove a single uploaded screenshot and re-number the rest."""
+    proc = store.processes.get(process_id)
+    if not proc:
+        raise HTTPException(status_code=404, detail="process not found")
+    artifact = next((a for a in proc["artifacts"] if a["id"] == artifact_id), None)
+    if not artifact:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    proc["artifacts"] = [a for a in proc["artifacts"] if a["id"] != artifact_id]
+    if artifact.get("object_key"):  # best-effort file cleanup; metadata removal is the source of truth
+        try:
+            objstore.abspath(artifact["object_key"]).unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+    _renumber(proc)
+    store.persist()
+    audit.record(proc["tenant_id"], p.user, "artifact.delete", "artifact", artifact_id, {})
+    return {"deleted": artifact_id, "count": len(proc["artifacts"])}
+
+
+@router.post("/{process_id}/artifacts:reorder")
+def reorder_artifacts(process_id: str, body: ReorderBody,
+                      p: Principal = Depends(require("job:create"))) -> dict:
+    """Set a new screenshot order (drag-and-drop in the UI). `order` lists every artifact id."""
+    proc = store.processes.get(process_id)
+    if not proc:
+        raise HTTPException(status_code=404, detail="process not found")
+    by_id = {a["id"]: a for a in proc["artifacts"]}
+    if set(body.order) != set(by_id):
+        raise HTTPException(status_code=400, detail="order must list exactly the current artifact ids")
+    for i, aid in enumerate(body.order, start=1):
+        by_id[aid]["order"] = i
+    proc["artifacts"].sort(key=lambda a: a["order"])
+    store.persist()
+    return {"order": body.order}

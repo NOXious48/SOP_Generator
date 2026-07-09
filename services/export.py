@@ -81,65 +81,91 @@ def _step_image(step: SopStep, image_loader: ImageLoader | None) -> bytes | None
     return _annotated_png(raw, step.screenshot_ref.bbox)
 
 
+# ---------- shared document helpers (the required 7-section SOP layout) ----------
+DOC_TITLE = "STANDARD OPERATING PROCEDURE (SOP)"
+
+
+def _conf_pct(sop: SOP) -> int:
+    return round(sop.overall_confidence * 100)
+
+
+def _conf_label(pct: int) -> str:
+    return "High" if pct >= 80 else "Moderate" if pct >= 60 else "Low"
+
+
+def _conf_sentence(sop: SOP) -> str:
+    pct = _conf_pct(sop)
+    return (f"{pct}% — {_conf_label(pct)} confidence in the reconstructed workflow "
+            f"(across {len(sop.steps)} step(s)).")
+
+
 def _meta_block(sop: SOP) -> str:
-    return (f"Confidence: {sop.overall_confidence} | Version: {sop.version} | "
-            f"State: {sop.state.value} | Models: {', '.join(sop.provenance.models)}")
+    return (f"Version: {sop.version} | State: {sop.state.value} | "
+            f"Models: {', '.join(sop.provenance.models) or 'n/a'}")
 
 
 def _markdown(sop: SOP, image_loader: ImageLoader | None = None) -> str:
-    lines = [f"# {sop.title}", "", f"> {_meta_block(sop)}", "",
-             f"## Objective\n{sop.objective}", "",
-             "## Prerequisites"]
-    lines += [f"- {p}" for p in sop.prerequisites] or ["- None"]
-    lines += ["", "## Steps", ""]
-    for s in sop.steps:
+    L = [f"# {DOC_TITLE}", "", f"**Process:** {sop.title}", "", f"_{_meta_block(sop)}_", ""]
+    L += [f"## 1. OBJECTIVE\n\n{sop.objective or '_Not specified._'}", ""]
+
+    L += ["## 2. PRE-REQUISITES", ""]
+    L += [f"- {p}" for p in sop.prerequisites] or ["- None"]
+
+    L += ["", "## 3. STEP-BY-STEP PROCEDURE"]
+    for s in sop.steps:  # each step: its description paragraph, then its screenshot, then the next
         flag = " ⚠️ needs review" if s.flags else ""
-        lines.append(f"### Step {s.no}: {s.action}{flag}")
-        lines.append("")
-        lines.append(f"{s.description}")
-        lines.append("")
-        lines.append(f"*Confidence: {s.confidence}*")
+        L += ["", f"### Step {s.no}: {s.action}{flag}", "", s.description or ""]
         img = _step_image(s, image_loader)
         if img:
             b64 = base64.b64encode(img).decode()
-            lines.append("")
-            lines.append(f"![Step {s.no}](data:image/png;base64,{b64})")
-        lines.append("")
-    lines += ["## Exceptions"] + [f"- {e}" for e in sop.exceptions]
-    lines += ["", "## Validation & Checks"] + [f"- {v}" for v in sop.validation]
-    lines += ["", f"## Output\n{sop.output}"]
-    return "\n".join(lines)
+            L += ["", f"![Step {s.no}](data:image/png;base64,{b64})"]
+
+    L += ["", "## 4. EXCEPTION HANDLING", ""]
+    L += [f"- {e}" for e in sop.exceptions] or ["- None documented."]
+
+    L += ["", "## 5. VALIDATION & CHECKS", ""]
+    L += [f"- {v}" for v in sop.validation] or ["- None documented."]
+
+    L += ["", f"## 6. OUTPUT\n\n{sop.output or '_Not specified._'}", ""]
+    L += ["## 7. CONFIDENCE SCORE", "", f"**{_conf_sentence(sop)}**"]
+    return "\n".join(L)
 
 
 def _html(sop: SOP, image_loader: ImageLoader | None = None) -> str:
-    cards = []
-    for s in sop.steps:
-        badge = ("<span style='background:#e0a92b;color:#000;padding:1px 7px;border-radius:10px;"
-                 "font-size:12px'>needs review</span>") if s.flags else ""
+    steps_html = []
+    for s in sop.steps:  # each step: heading + description paragraph, then its screenshot
+        badge = (" <span style='background:#e0a92b;color:#000;padding:0 6px;border-radius:9px;"
+                 "font-size:11px'>needs review</span>") if s.flags else ""
         img = _step_image(s, image_loader)
         img_html = ""
         if img:
             b64 = base64.b64encode(img).decode()
             img_html = (f"<img src='data:image/png;base64,{b64}' "
                         f"style='max-width:100%;border:1px solid #ddd;border-radius:8px;margin-top:8px'/>")
-        cards.append(
-            f"<div style='margin:0 0 22px;padding:14px 16px;border:1px solid #e5e7eb;border-radius:12px'>"
-            f"<div style='display:flex;justify-content:space-between;align-items:center'>"
-            f"<h3 style='margin:0'>Step {s.no}: {escape(s.action)}</h3>{badge}</div>"
-            f"<p style='margin:6px 0'>{escape(s.description)}</p>"
-            f"<p style='margin:0;color:#6b7280;font-size:13px'>Confidence: {s.confidence}</p>"
+        steps_html.append(
+            f"<div style='margin:0 0 26px'>"
+            f"<h3 style='margin:0 0 6px'>Step {s.no}: {escape(s.action)}{badge}</h3>"
+            f"<p style='margin:0'>{escape(s.description).replace(chr(10), '<br>')}</p>"
             f"{img_html}</div>")
-    prereqs = "".join(f"<li>{escape(p)}</li>" for p in sop.prerequisites)
-    excs = "".join(f"<li>{escape(e)}</li>" for e in sop.exceptions)
+
+    def ul(items: list[str], empty: str) -> str:
+        return "<ul>" + ("".join(f"<li>{escape(x)}</li>" for x in items) or f"<li>{empty}</li>") + "</ul>"
+
     return (f"<!doctype html><html><head><meta charset='utf-8'><title>{escape(sop.title)}</title>"
-            f"<style>body{{font-family:Segoe UI,system-ui,sans-serif;max-width:820px;margin:24px auto;"
-            f"padding:0 18px;color:#111}}h1{{margin-bottom:4px}}</style></head><body>"
-            f"<h1>{escape(sop.title)}</h1><p><em>{escape(_meta_block(sop))}</em></p>"
-            f"<h2>Objective</h2><p>{escape(sop.objective)}</p>"
-            f"<h2>Prerequisites</h2><ul>{prereqs}</ul>"
-            f"<h2>Steps</h2>{''.join(cards)}"
-            f"<h2>Exceptions</h2><ul>{excs}</ul>"
-            f"<h2>Output</h2><p>{escape(sop.output)}</p></body></html>")
+            f"<style>body{{font-family:Segoe UI,system-ui,sans-serif;max-width:860px;margin:24px auto;"
+            f"padding:0 18px;color:#111}}h1{{margin-bottom:2px;font-size:22px}}h2{{margin-top:28px;"
+            f"border-bottom:1px solid #eee;padding-bottom:4px}}h3{{margin-bottom:4px}}"
+            f"</style></head><body>"
+            f"<h1>{DOC_TITLE}</h1><p style='font-size:16px'><b>Process:</b> {escape(sop.title)}</p>"
+            f"<p style='color:#6b7280;font-size:13px'><em>{escape(_meta_block(sop))}</em></p>"
+            f"<h2>1. Objective</h2><p>{escape(sop.objective) or '<em>Not specified.</em>'}</p>"
+            f"<h2>2. Pre-requisites</h2>{ul(sop.prerequisites, 'None')}"
+            f"<h2>3. Step-by-Step Procedure</h2>{''.join(steps_html)}"
+            f"<h2>4. Exception Handling</h2>{ul(sop.exceptions, 'None documented.')}"
+            f"<h2>5. Validation &amp; Checks</h2>{ul(sop.validation, 'None documented.')}"
+            f"<h2>6. Output</h2><p>{escape(sop.output) or '<em>Not specified.</em>'}</p>"
+            f"<h2>7. Confidence Score</h2><p><b>{escape(_conf_sentence(sop))}</b></p>"
+            f"</body></html>")
 
 
 def _xml(sop: SOP) -> str:
@@ -197,24 +223,40 @@ def _docx(sop: SOP, image_loader: ImageLoader | None = None) -> bytes:
     from docx.shared import Inches
 
     doc = Document()
-    doc.add_heading(sop.title, level=0)
-    doc.add_paragraph(_meta_block(sop))
-    doc.add_heading("Objective", level=1)
-    doc.add_paragraph(sop.objective)
-    doc.add_heading("Prerequisites", level=1)
-    for p in sop.prerequisites:
+    doc.add_heading(DOC_TITLE, level=0)
+    doc.add_heading(f"Process: {sop.title}", level=1)
+    doc.add_paragraph(_meta_block(sop)).italic = True
+
+    doc.add_heading("1. Objective", level=1)
+    doc.add_paragraph(sop.objective or "Not specified.")
+
+    doc.add_heading("2. Pre-requisites", level=1)
+    for p in sop.prerequisites or ["None"]:
         doc.add_paragraph(p, style="List Bullet")
-    doc.add_heading("Steps", level=1)
-    for s in sop.steps:
+
+    doc.add_heading("3. Step-by-Step Procedure", level=1)
+    for s in sop.steps:  # each step: heading + description paragraph, then its screenshot
         flag = "  (needs review)" if s.flags else ""
         doc.add_heading(f"Step {s.no}: {s.action}{flag}", level=2)
-        doc.add_paragraph(s.description)
-        doc.add_paragraph(f"Confidence: {s.confidence}")
+        doc.add_paragraph(s.description or "")
         img = _step_image(s, image_loader)
         if img:
             doc.add_picture(io.BytesIO(img), width=Inches(6.0))
-    doc.add_heading("Output", level=1)
-    doc.add_paragraph(sop.output)
+
+    doc.add_heading("4. Exception Handling", level=1)
+    for e in sop.exceptions or ["None documented."]:
+        doc.add_paragraph(e, style="List Bullet")
+
+    doc.add_heading("5. Validation & Checks", level=1)
+    for v in sop.validation or ["None documented."]:
+        doc.add_paragraph(v, style="List Bullet")
+
+    doc.add_heading("6. Output", level=1)
+    doc.add_paragraph(sop.output or "Not specified.")
+
+    doc.add_heading("7. Confidence Score", level=1)
+    doc.add_paragraph(_conf_sentence(sop)).bold = True
+
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
@@ -224,28 +266,52 @@ def _pdf(sop: SOP, image_loader: ImageLoader | None = None) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.utils import ImageReader
-    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer
+    from reportlab.platypus import (
+        Image,
+        ListFlowable,
+        ListItem,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+    )
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4)
-    styles = getSampleStyleSheet()
+    st = getSampleStyleSheet()
+    cell = st["BodyText"]
     max_w = A4[0] - 72  # page width minus margins
-    flow = [Paragraph(escape(sop.title), styles["Title"]),
-            Paragraph(escape(_meta_block(sop)), styles["Italic"]), Spacer(1, 12),
-            Paragraph("Objective", styles["Heading2"]),
-            Paragraph(escape(sop.objective), styles["Normal"]), Spacer(1, 8),
-            Paragraph("Steps", styles["Heading2"])]
-    for s in sop.steps:
-        flag = " (needs review)" if s.flags else ""
-        flow.append(Paragraph(f"<b>{s.no}. {escape(s.action)}</b>{flag}", styles["Heading3"]))
-        flow.append(Paragraph(f"{escape(s.description)} [conf {s.confidence}]", styles["Normal"]))
+
+    def bullets(items: list[str], empty: str) -> ListFlowable:
+        items = items or [empty]
+        return ListFlowable([ListItem(Paragraph(escape(x), cell)) for x in items],
+                            bulletType="bullet", leftIndent=14)
+
+    flow = [Paragraph(DOC_TITLE, st["Title"]),
+            Paragraph(f"<b>Process:</b> {escape(sop.title)}", st["Heading2"]),
+            Paragraph(escape(_meta_block(sop)), st["Italic"]), Spacer(1, 10),
+            Paragraph("1. Objective", st["Heading2"]),
+            Paragraph(escape(sop.objective) or "<i>Not specified.</i>", cell), Spacer(1, 6),
+            Paragraph("2. Pre-requisites", st["Heading2"]), bullets(sop.prerequisites, "None"),
+            Spacer(1, 6), Paragraph("3. Step-by-Step Procedure", st["Heading2"]), Spacer(1, 4)]
+
+    for s in sop.steps:  # each step: heading + description paragraph, then its screenshot
+        flag = " <i>(needs review)</i>" if s.flags else ""
+        flow += [Paragraph(f"<b>Step {s.no}: {escape(s.action)}</b>{flag}", st["Heading3"]),
+                 Paragraph(escape(s.description).replace("\n", "<br/>"), cell)]
         img = _step_image(s, image_loader)
         if img:
             iw, ih = ImageReader(io.BytesIO(img)).getSize()
             w = min(max_w, iw)
-            flow.append(Spacer(1, 4))
-            flow.append(Image(io.BytesIO(img), width=w, height=ih * w / iw))
+            flow += [Spacer(1, 4), Image(io.BytesIO(img), width=w, height=ih * w / iw)]
         flow.append(Spacer(1, 10))
-    flow += [Paragraph("Output", styles["Heading2"]), Paragraph(escape(sop.output), styles["Normal"])]
+
+    flow += [Spacer(1, 8), Paragraph("4. Exception Handling", st["Heading2"]),
+             bullets(sop.exceptions, "None documented."), Spacer(1, 6),
+             Paragraph("5. Validation & Checks", st["Heading2"]),
+             bullets(sop.validation, "None documented."), Spacer(1, 6),
+             Paragraph("6. Output", st["Heading2"]),
+             Paragraph(escape(sop.output) or "<i>Not specified.</i>", cell), Spacer(1, 6),
+             Paragraph("7. Confidence Score", st["Heading2"]),
+             Paragraph(f"<b>{escape(_conf_sentence(sop))}</b>", cell)]
     doc.build(flow)
     return buf.getvalue()

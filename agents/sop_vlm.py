@@ -42,23 +42,31 @@ _SCHEMA_HINT = (
     "Return JSON with this exact shape:\n"
     "{\n"
     '  "title": string,                     // concise name of the process\n'
-    '  "objective": string,                 // one sentence: what this SOP achieves\n'
-    '  "prerequisites": [string],           // e.g. roles/permissions/data needed\n'
+    '  "objective": string,                 // 1-2 sentences: the purpose/goal of this process\n'
+    '  "prerequisites": [string],           // everything needed BEFORE starting, each item covering\n'
+    "                                       //   one of: required credentials, required permissions/\n"
+    "                                       //   roles, or required input information/data\n"
     '  "steps": [\n'
     "    {\n"
     '      "screen": integer,               // 1-based index of the screenshot this step refers to\n'
-    '      "action": string,                // short imperative, e.g. "Open Recruitment"\n'
-    '      "description": string,           // what to do, naming the exact button/field\n'
+    '      "action": string,                // short imperative user action, e.g. "Open Recruitment"\n'
+    '      "description": string,           // full detail: (a) the user action, naming the exact\n'
+    "                                       //   button/field, THEN (b) the expected system response\n"
+    "                                       //   after it (what the screen shows/does next)\n"
     '      "target": string|null,           // exact visible label of the control to click/fill\n'
     '      "box_2d": [ymin, xmin, ymax, xmax]|null,  // bounding box of that control, integers\n'
     "                                       //   0-1000 relative to ITS screenshot, top-left origin\n"
-    '      "expected_result": string,       // what the user should see after this step\n'
+    '      "expected_result": string,       // the expected system response after this step\n'
     '      "confidence": number             // 0-1, your confidence this step is correct\n'
     "    }\n"
     "  ],\n"
-    '  "exceptions": [string],              // common error paths\n'
-    '  "validation": [string],              // checks to confirm success\n'
-    '  "output": string                     // the end result of the whole process\n'
+    '  "exceptions": [string],              // likely failure cases WITH a suggested resolution for\n'
+    "                                       //   each, e.g. invalid login, missing required fields,\n"
+    "                                       //   validation failures, system/server errors. Format each\n"
+    '                                       //   as "<failure>: <suggested resolution>"\n'
+    '  "validation": [string],              // checks confirming success: mandatory fields completed,\n'
+    "                                       //   correct input formats, successful-completion verification\n"
+    '  "output": string                     // the expected final result after successful completion\n'
     "}\n\n"
     "For box_2d, locate the exact control the user clicks/fills and give a TIGHT bounding box "
     "around just that control (not the whole section), as [ymin, xmin, ymax, xmax] with each value "

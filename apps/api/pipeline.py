@@ -127,6 +127,7 @@ def run_job(job: JobView, options: dict[str, Any] | None = None) -> JobView:
         existing.validation = new.validation
         existing.output = new.output
         existing.overall_confidence = new.overall_confidence
+        existing.process_id = job.process_id   # regenerating from updated screenshots repoints the SOP
         existing.state = SopState.DRAFT
         existing.version += 1
         store.save_sop(existing)

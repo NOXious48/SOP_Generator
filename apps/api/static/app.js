@@ -36,9 +36,18 @@ async function ensureProcess() {
   processId = p.processId;
 }
 
+// image types we accept (all re-encoded to PNG server-side, so Gemini always gets a supported format)
+const ACCEPT_RE = /\.(png|jpe?g|webp|gif|bmp)$/i;
+const isSupportedImage = (f) => f.type.startsWith("image/") || ACCEPT_RE.test(f.name);
+
 async function addFiles(fileList) {
-  const files = [...fileList].filter((f) => f.type.startsWith("image/"));
-  if (!files.length) return;
+  const all = [...fileList];
+  const files = all.filter(isSupportedImage);
+  const skipped = all.length - files.length;
+  if (!files.length) {
+    if (skipped) setStatus("upload-status", "✗ Unsupported file type. Use PNG, JPG, JPEG, WEBP, GIF or BMP.", "err");
+    return;
+  }
   try {
     await ensureProcess();
     for (const f of files) {
@@ -47,22 +56,86 @@ async function addFiles(fileList) {
       const r = await fetch(`/v1/processes/${processId}/uploads:file`, { method: "POST", headers: H, body: fd });
       const body = await r.json();
       if (!r.ok) { setStatus("upload-status", `✗ ${f.name}: ${body.detail || r.status}`, "err"); continue; }
-      const div = document.createElement("div");
-      div.className = "relative w-[70px]";
-      const url = URL.createObjectURL(f);
-      if (body.deduplicated) {
-        div.innerHTML = `<img src="${url}" class="w-[70px] h-[46px] object-cover rounded-md border border-slate-200 opacity-60" />
-          <span class="absolute inset-x-0 bottom-0 text-[9px] text-center bg-amber-400 text-slate-900 rounded-b-md">duplicate</span>`;
-      } else {
-        artifacts.push({ id: body.artifactId, order: body.order, filename: f.name });
-        div.innerHTML = `<img src="${url}" class="w-[70px] h-[46px] object-cover rounded-md border border-slate-200" />
-          <span class="absolute top-1 left-1 text-[10px] text-white bg-slate-900/70 rounded px-1">${body.order}</span>`;
-      }
-      $("thumbs").appendChild(div);
+      artifacts.push({ id: body.artifactId, order: body.order, filename: f.name, url: URL.createObjectURL(f) });
     }
-    setStatus("upload-status", `${artifacts.length} screenshot(s) registered.`, "ok");
+    renderThumbs();
+    const extra = skipped ? ` (${skipped} unsupported file(s) skipped)` : "";
+    setStatus("upload-status", `${artifacts.length} screenshot(s) registered.${extra}`, skipped ? "warn" : "ok");
     $("run-btn").disabled = artifacts.length === 0;
   } catch (e) { setStatus("upload-status", "✗ " + e.message, "err"); }
+}
+
+// ---------- thumbnail strip: drag to reorder, click ✕ to remove ----------
+let dragFrom = null;
+function renderThumbs() {
+  const box = $("thumbs");
+  box.innerHTML = "";
+  artifacts.forEach((a, i) => {
+    const div = document.createElement("div");
+    div.className = "thumb relative w-[70px] cursor-grab";
+    div.draggable = true;
+    div.dataset.i = i;
+    div.innerHTML =
+      `<img src="${a.url}" class="w-[70px] h-[46px] object-cover rounded-md border border-slate-200 pointer-events-none" />
+       <span class="absolute top-1 left-1 text-[10px] text-white bg-slate-900/70 rounded px-1">${i + 1}</span>
+       <button title="Remove" data-x="${a.id}"
+         class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] leading-none flex items-center justify-center shadow hover:bg-rose-600">✕</button>`;
+    box.appendChild(div);
+  });
+  $("thumbs-hint").classList.toggle("hidden", artifacts.length === 0);
+}
+
+// remove (event-delegated so it survives re-renders)
+$("thumbs").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-x]");
+  if (btn) removeArtifact(btn.dataset.x);
+});
+// drag reorder
+$("thumbs").addEventListener("dragstart", (e) => {
+  const t = e.target.closest(".thumb"); if (!t) return;
+  dragFrom = +t.dataset.i; e.dataTransfer.effectAllowed = "move"; t.classList.add("opacity-40");
+});
+$("thumbs").addEventListener("dragend", (e) => { const t = e.target.closest(".thumb"); if (t) t.classList.remove("opacity-40"); });
+$("thumbs").addEventListener("dragover", (e) => e.preventDefault());
+$("thumbs").addEventListener("drop", (e) => {
+  e.preventDefault();
+  if (dragFrom === null) return;
+  const t = e.target.closest(".thumb");
+  // decide the insertion slot from where in the target we dropped (left half = before, right = after);
+  // dropping in empty space appends to the end.
+  let to = artifacts.length;
+  if (t) {
+    const rect = t.getBoundingClientRect();
+    to = +t.dataset.i + (e.clientX > rect.left + rect.width / 2 ? 1 : 0);
+  }
+  const [moved] = artifacts.splice(dragFrom, 1);
+  if (dragFrom < to) to -= 1;              // removing the dragged item shifts later slots left by one
+  to = Math.max(0, Math.min(to, artifacts.length));
+  const from = dragFrom; dragFrom = null;
+  if (to === from) { renderThumbs(); return; }   // no-op drop
+  artifacts.splice(to, 0, moved);
+  renderThumbs();
+  syncOrder();
+});
+
+async function syncOrder() {
+  if (!processId || !artifacts.length) return;
+  try {
+    await api(`/v1/processes/${processId}/artifacts:reorder`, {
+      method: "POST", body: JSON.stringify({ order: artifacts.map((a) => a.id) }) });
+    setStatus("upload-status", `Order updated — ${artifacts.length} screenshot(s).`, "ok");
+  } catch (e) { setStatus("upload-status", "✗ reorder failed: " + e.message, "err"); }
+}
+
+async function removeArtifact(id) {
+  if (!processId) return;
+  try {
+    await api(`/v1/processes/${processId}/artifacts/${id}`, { method: "DELETE" });
+    artifacts = artifacts.filter((a) => a.id !== id);
+    renderThumbs();
+    setStatus("upload-status", artifacts.length ? `${artifacts.length} screenshot(s) registered.` : "No screenshots yet.", artifacts.length ? "ok" : "");
+    $("run-btn").disabled = artifacts.length === 0;
+  } catch (e) { setStatus("upload-status", "✗ remove failed: " + e.message, "err"); }
 }
 
 // ---------- job ----------
@@ -198,6 +271,15 @@ async function loadSop() {
   renderSop(await api(`/v1/sops/${sopId}`));
 }
 
+// small helpers for the document-format sections shown on screen
+function confLabel(c) { const p = c * 100; return p >= 80 ? "High" : p >= 60 ? "Moderate" : "Low"; }
+function renderSection(label, items) {
+  if (!items || !items.length) return "";
+  const lis = items.map((x) => `<li>${esc(x)}</li>`).join("");
+  return `<div class="mt-3"><div class="eyebrow mb-1">${esc(label)}</div>
+    <ul class="list-disc pl-5 text-[12px] text-slate-600 space-y-0.5">${lis}</ul></div>`;
+}
+
 function renderSop(sop) {
   currentSop = sop;
   const fb = $("sop-fb"); if (fb) fb.style.display = "inline-flex";
@@ -205,6 +287,19 @@ function renderSop(sop) {
   $("k-steps").textContent = sop.steps.length;
   $("k-conf").textContent = Math.round(sop.overall_confidence * 100) + "%";
   $("k-state").textContent = sop.state;
+  // Objective + Pre-requisites (sections 1 & 2 of the document format)
+  $("sop-objective").textContent = sop.objective || "";
+  $("sop-prereqs").innerHTML = renderSection("Pre-requisites", sop.prerequisites);
+  $("sop-steps-label").classList.toggle("hidden", !sop.steps.length);
+  // Exception handling, validation, output + confidence (sections 4–7)
+  $("sop-extra").innerHTML =
+    renderSection("Exception handling", sop.exceptions) +
+    renderSection("Validation & checks", sop.validation) +
+    (sop.output ? `<div class="mt-3"><div class="eyebrow mb-1">Output</div>
+       <div class="text-[12px] text-slate-600">${esc(sop.output)}</div></div>` : "") +
+    `<div class="mt-3"><div class="eyebrow mb-1">Confidence score</div>
+       <div class="text-[12px] text-slate-600"><b>${Math.round(sop.overall_confidence * 100)}%</b>
+       — ${confLabel(sop.overall_confidence)} confidence in the reconstructed workflow.</div></div>`;
   $("steps").innerHTML = sop.steps.map((s) => {
     const flagged = (s.flags || []).length > 0;
     const badge = flagged
@@ -411,6 +506,88 @@ async function refineSop() {
   } catch (e) { stopProgress(false); setStatus("job-status", "✗ " + e.message, "err"); running = false; $("run-btn").disabled = false; }
 }
 
+// ---------- UI drift detection (upload current screenshots -> compare vs SOP's originals) ----------
+let driftProcessId = null;   // process holding the freshly-uploaded "current" screenshots
+const driftDrop = $("drift-drop"), driftInput = $("drift-input");
+const DOVER = ["bg-violet-50", "border-brand-violet"];
+driftDrop.onclick = () => { if (sopId) driftInput.click(); };
+driftDrop.ondragover = (e) => { e.preventDefault(); driftDrop.classList.add(...DOVER); };
+driftDrop.ondragleave = () => driftDrop.classList.remove(...DOVER);
+driftDrop.ondrop = (e) => { e.preventDefault(); driftDrop.classList.remove(...DOVER); driftCheck(e.dataTransfer.files); };
+driftInput.onchange = () => driftCheck(driftInput.files);
+
+async function driftCheck(fileList) {
+  if (!sopId) { setStatus("drift-status", "Generate or open a SOP first.", "warn"); return; }
+  const files = [...fileList].filter((f) => f.type.startsWith("image/"));
+  if (!files.length) return;
+  setStatus("drift-status", "Uploading updated screenshots…", "");
+  try {
+    // fresh process for the current screenshots, uploaded in order
+    const p = await api("/v1/processes", { method: "POST", body: JSON.stringify({ name: "UI drift check" }) });
+    driftProcessId = p.processId;
+    for (const f of files) {
+      const fd = new FormData();
+      fd.append("file", f, f.name);
+      const r = await fetch(`/v1/processes/${driftProcessId}/uploads:file`, { method: "POST", headers: H, body: fd });
+      if (!r.ok) { const b = await r.json(); throw new Error(`${f.name}: ${b.detail || r.status}`); }
+    }
+    setStatus("drift-status", "Comparing against this SOP's screenshots…", "");
+    const rep = await api(`/v1/sops/${sopId}/drift`, { method: "POST", body: JSON.stringify({ new_process_id: driftProcessId }) });
+    renderDrift(rep);
+  } catch (e) { setStatus("drift-status", "✗ " + e.message, "err"); }
+  driftInput.value = "";
+}
+
+function renderDrift(rep) {
+  const box = $("drift-report");
+  box.classList.remove("hidden");
+  const pct = Math.round((rep.driftScore || 0) * 100);
+  const rows = (rep.screens || []).map((s) => {
+    const label = s.note ? s.note : (s.changed ? `changed (distance ${s.distance})` : `unchanged (distance ${s.distance})`);
+    const color = s.changed ? "text-rose-600" : "text-emerald-600";
+    const dot = s.changed ? "bg-rose-500" : "bg-emerald-500";
+    return `<div class="flex items-center gap-2 text-[12px] py-0.5">
+      <span class="inline-block w-2 h-2 rounded-full ${dot}"></span>
+      <span class="text-slate-500">Screen ${s.order}</span><span class="${color}">${label}</span></div>`;
+  }).join("");
+  const affected = (rep.affectedSteps || []).length
+    ? `<div class="text-[12px] text-slate-600 mt-1">Steps likely affected: <b>${rep.affectedSteps.join(", ")}</b></div>` : "";
+  if (rep.drift) {
+    setStatus("drift-status", `⚠ UI drift detected — ${rep.changedScreens}/${rep.totalScreens} screens changed (${pct}%).`, "warn");
+    box.innerHTML = rows + affected +
+      `<button onclick="regenerateFromDrift()" class="btn-grad text-white text-[13px] font-semibold rounded-lg px-4 py-2 w-full mt-3">Update SOP from updated screenshots</button>`;
+  } else {
+    setStatus("drift-status", `✓ No UI drift — the SOP still matches the current screens.`, "ok");
+    box.innerHTML = rows;
+  }
+}
+
+// regenerate the SOP from the newly-uploaded screenshots (old kept as a version)
+async function regenerateFromDrift() {
+  if (running || !driftProcessId || !sopId) return;
+  running = true; $("run-btn").disabled = true;
+  startProgress();
+  $("stage").textContent = "Updating SOP for the new UI";
+  try {
+    const j = await api("/v1/jobs", { method: "POST", body: JSON.stringify({
+      process_id: driftProcessId,
+      options: { async: true, refine_sop_id: sopId,
+        instruction: "The UI has changed. Regenerate this SOP from these updated screenshots, re-deriving every step and its click target from the new UI." } }) });
+    jobId = j.jobId;
+    processId = driftProcessId;   // the SOP now points at the updated screenshots
+    $("drift-report").classList.add("hidden");
+    setStatus("drift-status", "");
+    pollJob();   // reloads SOP (same id, new version) + perception from the new screenshots
+  } catch (e) { stopProgress(false); setStatus("job-status", "✗ " + e.message, "err"); running = false; $("run-btn").disabled = false; }
+}
+
+function resetDrift() {
+  driftProcessId = null;
+  $("drift-report").classList.add("hidden");
+  $("drift-report").innerHTML = "";
+  setStatus("drift-status", "");
+}
+
 // ---------- feedback / learning memory ----------
 async function loadFeedback() {
   try {
@@ -456,6 +633,7 @@ async function openSop(id) {
     buildViewer();
     renderSop(sop);
     loadChat();
+    resetDrift();
     $("trace").querySelector("tbody").innerHTML = "";
     [...document.querySelectorAll(".hist-item")].forEach((x) => x.classList.toggle("border-brand-violet", x.dataset.id === id));
     window.scrollTo({ top: 0, behavior: "smooth" });

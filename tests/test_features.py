@@ -115,3 +115,67 @@ def test_eval_harness_meets_thresholds():
     agg = aggregate(run())
     assert agg["grounding_rate"] >= 0.95
     assert agg["intent_match"] == 1.0
+
+
+# ---- UI drift detection (Pushp) ----
+def test_drift_detection_reports_changed_screens():
+    sid = _make_sop()
+    # a fresh process standing in for the current/updated screenshots
+    r = client.post("/v1/processes", json={"name": "Updated UI"}, headers=ADMIN)
+    npid = r.json()["processId"]
+    for i in range(1, 4):
+        client.post(f"/v1/processes/{npid}/uploads?filename={i}.png&order={i}", headers=ADMIN)
+    d = client.post(f"/v1/sops/{sid}/drift", json={"new_process_id": npid}, headers=ADMIN)
+    assert d.status_code == 200
+    body = d.json()
+    assert body["totalScreens"] == 3
+    assert len(body["screens"]) == 3
+    assert body["drift"] is True  # metadata-only screens have no pHash -> treated as changed
+    assert set(body["affectedSteps"]) <= {s["order"] for s in body["screens"]} | set(range(1, 10))
+
+
+def test_drift_unknown_sop_404():
+    r = client.post("/v1/sops/nope/drift", json={"new_process_id": "x"}, headers=ADMIN)
+    assert r.status_code == 404
+
+
+# ---- Multi-format upload + reorder + delete (Utkarsh) ----
+def _png_bytes(color: tuple[int, int, int], fmt: str = "PNG") -> bytes:
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (40, 30), color).save(buf, format=fmt)
+    return buf.getvalue()
+
+
+def test_upload_accepts_jpeg_and_webp():
+    pid = client.post("/v1/processes", json={"name": "Fmt"}, headers=ADMIN).json()["processId"]
+    for fmt, mime, name in [("JPEG", "image/jpeg", "a.jpg"), ("WEBP", "image/webp", "b.webp")]:
+        r = client.post(f"/v1/processes/{pid}/uploads:file", headers=ADMIN,
+                        files={"file": (name, _png_bytes((10, 20, 30), fmt), mime)})
+        assert r.status_code == 200, r.text
+    # served back as PNG regardless of the input format (what Gemini receives)
+    proc = client.get(f"/v1/processes/{pid}", headers=ADMIN).json()
+    img = client.get(f"/v1/processes/{pid}/artifacts/{proc['artifacts'][0]['id']}/image", headers=ADMIN)
+    assert img.headers["content-type"] == "image/png"
+
+
+def test_reorder_and_delete_artifacts():
+    pid = client.post("/v1/processes", json={"name": "Reorder"}, headers=ADMIN).json()["processId"]
+    ids = [client.post(f"/v1/processes/{pid}/uploads:file", headers=ADMIN,
+                       files={"file": (f"{i}.png", _png_bytes((i, i, i)), "image/png")}).json()["artifactId"]
+           for i in range(1, 4)]
+    # reverse the order
+    r = client.post(f"/v1/processes/{pid}/artifacts:reorder", json={"order": ids[::-1]}, headers=ADMIN)
+    assert r.status_code == 200
+    arts = sorted(client.get(f"/v1/processes/{pid}", headers=ADMIN).json()["artifacts"], key=lambda a: a["order"])
+    assert [a["id"] for a in arts] == ids[::-1]
+    assert [a["order"] for a in arts] == [1, 2, 3]
+    # reorder with a wrong id set is rejected
+    assert client.post(f"/v1/processes/{pid}/artifacts:reorder", json={"order": ids[:2]}, headers=ADMIN).status_code == 400
+    # delete the middle screenshot -> remaining re-numbered 1..2
+    assert client.delete(f"/v1/processes/{pid}/artifacts/{ids[0]}", headers=ADMIN).status_code == 200
+    arts = client.get(f"/v1/processes/{pid}", headers=ADMIN).json()["artifacts"]
+    assert len(arts) == 2
+    assert sorted(a["order"] for a in arts) == [1, 2]
