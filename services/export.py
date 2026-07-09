@@ -423,7 +423,7 @@ def _pdf(sop: SOP, image_loader: ImageLoader | None = None) -> bytes:
         cols = [("Process Name", _trunc(M["project"], 22)), ("Process ID", _trunc(M["process_id"], 16)),
                 ("Version", M["version"]), ("Date", M["date"]), ("Classification", "Internal")]
         xs = [195, 360, 470, 545, 640]
-        for x, (label, val) in zip(xs, cols):
+        for x, (label, val) in zip(xs, cols, strict=False):
             c.setFillColor(VIOLET)
             c.setFont("Helvetica-Bold", 7.5)
             c.drawString(x, H - 32, label.upper())

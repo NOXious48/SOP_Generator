@@ -4,7 +4,6 @@ Modular monolith mounting every bounded-context router + observability + a serve
 """
 from __future__ import annotations
 
-import threading
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -37,28 +36,27 @@ from apps.api.routers import health as health_router
 # before any request; agents read the env at call time.
 load_dotenv()
 
-def _start_ocr_warmup() -> None:
-    """Preload the OCR model in a background thread at boot so no user waits for the first load.
-    Disable with WARMUP_OCR=0. No-op unless the active profile uses PaddleOCR (skips mock/tests)."""
+def _preload_ocr() -> None:
+    """Eagerly load PaddleOCR at startup (blocking) so it is ready the moment the app starts —
+    no lazy first-request load. Set WARMUP_OCR=0 to skip (e.g. mock/demo without PaddleOCR
+    installed). Guarded so a missing/misconfigured OCR stack never crashes boot."""
     import os
 
     if os.getenv("WARMUP_OCR", "1") == "0":
         return
+    try:
+        from apps.inference_gateway.adapters import _get_paddle
 
-    def _run() -> None:
-        try:
-            from apps.inference_gateway.adapters import warmup_ocr
+        _get_paddle()  # build the engine now, on the main startup path
+    except Exception as exc:  # noqa: BLE001 - never crash boot if paddle is missing/misconfigured
+        import logging
 
-            warmup_ocr()
-        except Exception:  # noqa: BLE001 - warmup must never crash the server
-            pass
-
-    threading.Thread(target=_run, name="ocr-warmup", daemon=True).start()
+        logging.getLogger("processiq").warning("OCR preload skipped: %s", exc)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    _start_ocr_warmup()  # boot stays instant; model loads in the background
+    _preload_ocr()  # PaddleOCR loads eagerly at startup (blocks boot until ready)
     yield
 
 
