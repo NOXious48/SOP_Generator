@@ -17,6 +17,7 @@ _From visuals to value. Automated · Intelligent · Actionable._
 1. [Introduction](#1-introduction)
 2. [What ProcessIQ Does](#2-what-processiq-does)
 3. [How It Works](#3-how-it-works)
+   - [Understanding screen layout — tables, forms & spreadsheets](#understanding-screen-layout--tables-forms--spreadsheets)
 4. [Architecture](#4-architecture)
 5. [Technology Stack](#5-technology-stack)
 6. [Quick Start (for everyone)](#6-quick-start)
@@ -120,6 +121,44 @@ screenshots + your instruction to a vision model in **a single call**, gets back
 then (optionally) uses OCR to pin each step's box onto the exact control. This is cheaper, more
 accurate, auditable, and works on the free tier of a hosted model. Accepted corrections and an
 approved exemplar are folded back into the prompt as **learned guidance** for future runs.
+
+### Understanding screen layout — tables, forms & spreadsheets
+
+A screenshot is not flat text; it has _structure_ — a data table with a header row and body rows, a
+spreadsheet grid of cells, a form of label→field pairs, a list, tabs, a modal. ProcessIQ recovers
+that structure with **two complementary mechanisms**:
+
+**1. Holistic visual understanding (always on).** The vision-LLM sees each screen as a whole, the way
+a person does, and interprets its structure semantically:
+
+- **Tables / data grids** — it distinguishes the **header row** from data rows and reads the grid
+  **row by row, column by column**, so a step can say _"in the **Quantity** column of the **line-item**
+  table, enter 500."_
+- **Spreadsheets (Excel-like)** — the same grid reasoning applies to cells: it understands the
+  **row/column addressing** and the active cell / selected range, and refers to cells by their column
+  header or address rather than pixel coordinates.
+- **Forms** — it pairs each **label with its input field** (and dropdowns, checkboxes, radios), so a
+  step names the exact field to fill.
+- **Screen role** — each screen is typed (login / dashboard / **form** / **list** / detail /
+  confirmation / error), so a table-heavy "list" screen is treated as tabular, a "form" screen as
+  fields to complete, etc.
+
+**2. Geometric + OCR grounding (when OCR is enabled).** This pins the visual understanding to exact
+pixels and reconstructs structure from geometry:
+
+- **Element detection** classifies each region by type — `button`, `input`, `dropdown`, `checkbox`,
+  `radio`, **`table`**, `tab`, `menu`, `modal`, `label`, … — each with a bounding box.
+- **OCR** extracts every text region with its box, then each text region is attached to the
+  **smallest element that contains it** — this is what associates a **label with its field** and a
+  **cell's text with its column/row**.
+- **Reading order** is computed geometrically: elements (and the text inside each element) are sorted
+  **top-to-bottom, then left-to-right** — i.e. **row-major order**. That is exactly how a human scans
+  a table or spreadsheet, so rows stay together and columns line up, and the reconstructed step order
+  matches the natural flow of the screen.
+
+The result: whether a screen is a plain form, a dense data table, or an Excel-style grid, ProcessIQ
+describes the action against the **right structural element** ("the Save button", "the Email field",
+"the Status column"), and — with OCR grounding — draws the click-box on the exact spot.
 
 ---
 
