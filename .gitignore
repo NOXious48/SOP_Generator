@@ -63,6 +63,7 @@ kubeconfig
 
 # ---- Databases / storage (local dev) ----
 objstore_data/
+data/
 more/
 *.db
 *.sqlite3

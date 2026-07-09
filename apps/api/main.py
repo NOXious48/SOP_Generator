@@ -18,7 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from apps.api.metrics import MetricsMiddleware, metrics_response
 from apps.api.routers import (
     admin,
+    chat,
     exports,
+    feedback,
     integrations,
     jobs,
     notifications,
@@ -92,7 +94,8 @@ async def unhandled(request: Request, exc: Exception):  # pragma: no cover
 
 
 for r in (health_router.router, processes.router, jobs.router, sops.router, review.router,
-          search.router, exports.router, integrations.router, admin.router, notifications.router):
+          search.router, exports.router, integrations.router, admin.router, notifications.router,
+          feedback.router, chat.router):
     app.include_router(r)
 
 

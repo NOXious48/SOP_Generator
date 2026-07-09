@@ -47,6 +47,7 @@ def approve_step(sop_id: str, no: int, p: Principal = Depends(require("sop:appro
     store.reviews.setdefault(sop_id, {"approved": set(), "log": []})
     store.reviews[sop_id]["approved"].add(no)
     store.reviews[sop_id]["log"].append({"step": no, "decision": "approve", "by": p.user})
+    store.persist()
     audit.record(sop.tenant_id, p.user, "step.approve", "sop", sop_id, {"step": no})
     return {"sopId": sop_id, "step": no, "approved": True}
 
@@ -61,6 +62,7 @@ def reject_step(sop_id: str, no: int, body: RejectBody,
     store.reviews[sop_id]["approved"].discard(no)
     store.reviews[sop_id]["log"].append({"step": no, "decision": "reject",
                                          "by": p.user, "comment": body.comment})
+    store.persist()
     audit.record(sop.tenant_id, p.user, "step.reject", "sop", sop_id,
                  {"step": no, "comment": body.comment})
     return {"sopId": sop_id, "step": no, "approved": False}

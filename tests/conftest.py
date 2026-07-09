@@ -6,8 +6,11 @@ any test module (and before the app), and load_dotenv(override=False) won't clob
 suite stays deterministic and offline.
 """
 import os
+import tempfile
 
 os.environ["INFERENCE_MODE"] = "mock"
 os.environ["MODEL_PROFILE"] = "mock"
 os.environ["HOSTED_VLM_BASE_URL"] = ""
 os.environ["HOSTED_VLM_API_KEY"] = ""
+# Isolate persistence so tests never read/write the real data/store.json.
+os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="processiq-test-")

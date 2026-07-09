@@ -314,7 +314,7 @@ def hosted_chat(prompt: str, system: str = "", json_mode: bool = False) -> str: 
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
         **({"response_format": {"type": "json_object"}} if json_mode else {}),
     }
-    r = httpx.post(f"{base}/chat/completions", json=body,
+    r = httpx.post(f"{base.rstrip('/')}/chat/completions", json=body,
                    headers={"Authorization": f"Bearer {key}"}, timeout=120)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
@@ -332,6 +332,6 @@ def vllm_chat(prompt: str, system: str = "", json_mode: bool = False) -> str:  #
     headers = {}
     if key := os.getenv("VLLM_API_KEY"):
         headers["Authorization"] = f"Bearer {key}"
-    r = httpx.post(f"{base}/chat/completions", json=body, headers=headers, timeout=180)
+    r = httpx.post(f"{base.rstrip('/')}/chat/completions", json=body, headers=headers, timeout=180)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]

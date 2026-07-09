@@ -29,6 +29,7 @@ def _image_loader_for(process_id: str):
 
 class ExportRequest(BaseModel):
     format: str = "markdown"
+    version: int | None = None   # export a specific version; None = current working SOP
 
 
 @router.get("/{sop_id}/exports/formats")
@@ -39,14 +40,16 @@ def list_formats(p: Principal = Depends(require("sop:read"))) -> dict:
 @router.post("/{sop_id}/exports")
 def create_export(sop_id: str, req: ExportRequest,
                   p: Principal = Depends(require("export:create"))) -> Response:
-    sop = store.get_sop(sop_id)
+    sop = store.get_version(sop_id, req.version) if req.version else store.get_sop(sop_id)
     if not sop:
-        raise HTTPException(status_code=404, detail="sop not found")
+        raise HTTPException(status_code=404, detail="sop/version not found")
     try:
         data, content_type = export(sop, req.format, image_loader=_image_loader_for(sop.process_id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    audit.record(sop.tenant_id, p.user, "sop.export", "sop", sop_id, {"format": req.format})
+    audit.record(sop.tenant_id, p.user, "sop.export", "sop", sop_id,
+                 {"format": req.format, "version": req.version})
     ext = req.format.lower().replace("markdown", "md")
+    suffix = f"_v{req.version}" if req.version else ""
     return Response(content=data, media_type=content_type,
-                    headers={"Content-Disposition": f"attachment; filename={sop_id}.{ext}"})
+                    headers={"Content-Disposition": f"attachment; filename={sop_id}{suffix}.{ext}"})

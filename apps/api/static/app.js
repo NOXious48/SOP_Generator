@@ -5,6 +5,7 @@ const JSON_H = { ...H, "Content-Type": "application/json" };
 
 let processId = null, jobId = null, sopId = null;
 let running = false;   // guards against double-clicking Run (would fire two jobs / two API calls)
+let currentSop = null; // last-rendered SOP (source for inline step editing)
 let screens = [];          // perception: [{artifact_id, order, elements[], text[]}]
 let artifacts = [];        // [{id, order, filename}]
 let images = {};           // artifact_id -> HTMLImageElement
@@ -93,6 +94,7 @@ async function pollJob() {
       stopProgress(true);
       setStatus("job-status", job.status === "NEEDS_REVIEW" ? "Done — some steps need review." : "Done.", job.status === "NEEDS_REVIEW" ? "warn" : "ok");
       await Promise.all([loadSop(), loadPerception(), loadTrace()]);
+      loadHistory(); loadChat();
       running = false; $("run-btn").disabled = false; return;
     }
     setTimeout(pollJob, 1000);
@@ -103,10 +105,16 @@ async function pollJob() {
 async function loadPerception() {
   const p = await api(`/v1/jobs/${jobId}/perception`);
   screens = p.screens;
-  $("viewer-empty").classList.add("hidden");     // swap the cover hero for the live viewer
+  buildViewer();
+}
+
+// Build the screenshot strip + canvas from `screens` (used by both live runs and reopened history).
+function buildViewer() {
+  $("viewer-empty").classList.add("hidden");
   $("viewer-content").classList.remove("hidden");
   const strip = $("strip");
   strip.innerHTML = "";
+  images = {};
   for (const s of screens) {
     const img = document.createElement("img");
     img.src = `/v1/processes/${processId}/artifacts/${s.artifact_id}/image`;
@@ -187,7 +195,12 @@ function stopProgress(done) {
 // ---------- SOP ----------
 async function loadSop() {
   if (!sopId) return;
-  const sop = await api(`/v1/sops/${sopId}`);
+  renderSop(await api(`/v1/sops/${sopId}`));
+}
+
+function renderSop(sop) {
+  currentSop = sop;
+  const fb = $("sop-fb"); if (fb) fb.style.display = "inline-flex";
   $("sop-title").textContent = `${sop.title}`;
   $("k-steps").textContent = sop.steps.length;
   $("k-conf").textContent = Math.round(sop.overall_confidence * 100) + "%";
@@ -198,20 +211,104 @@ async function loadSop() {
       ? `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 whitespace-nowrap">needs review</span>`
       : `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">ok</span>`;
     const ref = s.screenshot_ref ? `data-art="${s.screenshot_ref.artifact_id}" data-bbox="${s.screenshot_ref.bbox.join(",")}"` : "";
-    return `<div class="step-card" ${ref} onclick="stepClick(this)">
-      <div class="flex justify-between items-center gap-2"><b class="text-[13px]">${s.no}. ${esc(s.action)}</b>${badge}</div>
+    return `<div class="step-card" data-no="${s.no}" ${ref} onclick="stepClick(this)">
+      <div class="flex justify-between items-center gap-2">
+        <b class="text-[13px]">${s.no}. ${esc(s.action)}</b>
+        <span class="flex items-center gap-1.5">${badge}
+          <button title="Edit step" onclick="event.stopPropagation();editStep(${s.no})" class="text-[12px] text-slate-400 hover:text-brand-violet">✏️</button>
+        </span>
+      </div>
       <div class="text-[12px] text-slate-500 mt-1 whitespace-pre-line">${esc(s.description)}</div>
       <div class="meter mt-2"><div style="width:${Math.round(s.confidence * 100)}%"></div></div>
       ${flagged ? `<button class="mt-2 text-[12px] font-medium text-brand-violet border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50" onclick="event.stopPropagation();approve(${s.no})">Approve step</button>` : ""}
     </div>`;
-  }).join("");
+  }).join("") +
+  `<button onclick="addStep()" class="w-full mt-1 text-[12px] font-medium text-brand-violet border border-dashed border-slate-300 rounded-lg py-2 hover:bg-slate-50">+ Add step</button>`;
+  loadVersions();
 }
 
 function stepClick(el) {
+  if (el.dataset.editing) return;   // don't jump while editing
   [...$("steps").children].forEach((s) => s.classList.remove("sel"));
   el.classList.add("sel");
   const art = el.dataset.art;
   if (art && images[art]) selectScreen(art, el.dataset.bbox.split(",").map(Number));
+}
+
+// ---------- step editing (each save creates a new SOP version) ----------
+function editStep(no) {
+  const step = (currentSop.steps || []).find((s) => s.no === no);
+  const card = document.querySelector(`.step-card[data-no="${no}"]`);
+  if (!step || !card) return;
+  card.dataset.editing = "1";
+  card.innerHTML = `
+    <input class="field mb-2 step-action" placeholder="Action" />
+    <textarea class="field step-desc" rows="4" style="resize:vertical" placeholder="Description"></textarea>
+    <div class="flex gap-2 mt-2">
+      <button class="btn-grad text-white text-[12px] font-semibold rounded-lg px-3 py-1.5" onclick="saveStep(${no})">Save</button>
+      <button class="text-[12px] text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5" onclick="loadSop()">Cancel</button>
+      <button class="ml-auto text-[12px] text-red-500 border border-slate-200 rounded-lg px-3 py-1.5" onclick="deleteStep(${no})">Delete</button>
+    </div>`;
+  card.querySelector(".step-action").value = step.action;
+  card.querySelector(".step-desc").value = step.description;
+}
+async function saveStep(no) {
+  const card = document.querySelector(`.step-card[data-no="${no}"]`);
+  const action = card.querySelector(".step-action").value;
+  const description = card.querySelector(".step-desc").value;
+  try {
+    await api(`/v1/sops/${sopId}/steps/${no}`, { method: "PATCH", body: JSON.stringify({ action, description }) });
+    await loadSop();
+    loadFeedback();
+    setStatus("job-status", "Step saved — new version created.", "ok");
+  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); }
+}
+async function addStep() {
+  try {
+    await api(`/v1/sops/${sopId}/steps`, { method: "POST", body: JSON.stringify({ action: "New step", description: "Describe the action…" }) });
+    await loadSop();
+    loadFeedback();
+    setStatus("job-status", "Step added — new version created.", "ok");
+  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); }
+}
+async function deleteStep(no) {
+  try {
+    await api(`/v1/sops/${sopId}/steps/${no}`, { method: "DELETE" });
+    await loadSop();
+    loadFeedback();
+    setStatus("job-status", "Step deleted — new version created.", "ok");
+  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); }
+}
+
+// ---------- version history ----------
+async function loadVersions() {
+  if (!sopId) return;
+  try {
+    const r = await api(`/v1/sops/${sopId}/versions`);
+    const el = $("versions");
+    if (!el) return;
+    if (!r.versions.length) { el.innerHTML = `<div class="text-[12px] text-slate-400">No versions yet.</div>`; return; }
+    el.innerHTML = r.versions.slice().reverse().map((v) => `
+      <div class="flex items-center gap-2 text-[12px] border-t border-slate-100 py-1.5 first:border-t-0">
+        <span class="font-semibold text-slate-700">v${v.version}</span>
+        <span class="text-slate-400">${v.steps} steps · ${Math.round(v.confidence * 100)}% · ${esc(v.state)}</span>
+        <button onclick="viewVersion(${v.version})" class="ml-auto text-slate-500 hover:text-brand-violet">View</button>
+        <button onclick="downloadVersion(${v.version})" class="text-brand-violet hover:underline" title="Download in the selected format">⬇</button>
+      </div>`).join("");
+  } catch (e) { /* best-effort */ }
+}
+async function viewVersion(v) {
+  try { renderSop(await api(`/v1/sops/${sopId}/versions/${v}`)); } catch (e) { /* ignore */ }
+}
+async function downloadVersion(v) {
+  const fmt = $("fmt").value;
+  const r = await fetch(`/v1/sops/${sopId}/exports`, { method: "POST", headers: JSON_H, body: JSON.stringify({ format: fmt, version: v }) });
+  if (!r.ok) { setStatus("job-status", "Export failed", "err"); return; }
+  const blob = await r.blob();
+  const ext = EXPORT_EXT[fmt] || fmt;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `sop_v${v}.${ext}`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
 }
 
 async function approve(no) {
@@ -264,6 +361,107 @@ async function loadTrace() {
      </tr>`).join("");
 }
 
+// ---------- chat over the SOP (persisted per SOP) ----------
+function chatBubble(m) {
+  return m.role === "user"
+    ? `<div class="text-right"><span class="inline-block bg-violet-100 text-violet-900 rounded-xl px-3 py-1.5 max-w-[85%] text-left whitespace-pre-line">${esc(m.text)}</span></div>`
+    : `<div class="text-left"><span class="inline-block bg-slate-100 text-slate-700 rounded-xl px-3 py-1.5 max-w-[90%] whitespace-pre-line">${esc(m.text)}</span></div>`;
+}
+function renderChat(msgs) {
+  const el = $("chat-log");
+  el.innerHTML = msgs.length ? msgs.map(chatBubble).join("")
+    : `<div class="text-[12px] text-slate-400">No messages yet — ask anything about this SOP.</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+async function loadChat() {
+  if (!sopId) return;
+  try { renderChat((await api(`/v1/sops/${sopId}/chat`)).messages); } catch (e) { /* best-effort */ }
+}
+async function sendChat() {
+  const input = $("chat-input");
+  const msg = input.value.trim();
+  if (!msg) return;
+  if (!sopId) { setStatus("job-status", "Generate or open a SOP first.", "warn"); return; }
+  input.value = "";
+  const el = $("chat-log");
+  el.insertAdjacentHTML("beforeend", chatBubble({ role: "user", text: msg }));
+  el.insertAdjacentHTML("beforeend", `<div class="text-left" id="chat-typing"><span class="inline-block bg-slate-100 text-slate-400 rounded-xl px-3 py-1.5">…</span></div>`);
+  el.scrollTop = el.scrollHeight;
+  try {
+    const r = await api(`/v1/sops/${sopId}/chat`, { method: "POST", body: JSON.stringify({ message: msg }) });
+    renderChat(r.messages);
+  } catch (e) { const t = $("chat-typing"); if (t) t.remove(); setStatus("job-status", "✗ " + e.message, "err"); }
+}
+
+// ---------- refine (regenerate a better SOP from follow-up changes; old kept as a version) ----------
+async function refineSop() {
+  if (running) return;
+  if (!sopId || !processId) { setStatus("job-status", "Generate or open a SOP first.", "warn"); return; }
+  const changes = $("refine").value.trim();
+  if (!changes) { setStatus("job-status", "Describe the changes you want.", "warn"); return; }
+  running = true; $("run-btn").disabled = true;
+  startProgress();
+  $("stage").textContent = "Applying your changes";
+  try {
+    const j = await api("/v1/jobs", { method: "POST", body: JSON.stringify({
+      process_id: processId, options: { async: true, refine_sop_id: sopId, instruction: changes } }) });
+    jobId = j.jobId;
+    $("refine").value = "";
+    pollJob();   // on completion re-loads the SOP (same id, new version) + version history
+  } catch (e) { stopProgress(false); setStatus("job-status", "✗ " + e.message, "err"); running = false; $("run-btn").disabled = false; }
+}
+
+// ---------- feedback / learning memory ----------
+async function loadFeedback() {
+  try {
+    const r = await api("/v1/feedback");
+    const b = $("learn-badge");
+    if (r.corrections > 0) {
+      b.textContent = `🧠 learned from ${r.corrections} correction${r.corrections > 1 ? "s" : ""}`;
+      b.classList.remove("hidden");
+    } else { b.classList.add("hidden"); }
+  } catch (e) { /* best-effort */ }
+}
+async function submitRating(rating) {
+  try {
+    await api("/v1/feedback", { method: "POST", body: JSON.stringify({ sop_id: sopId, rating }) });
+    setStatus("job-status", rating === "up" ? "Thanks — feedback saved." : "Noted — the AI will learn from it.", "ok");
+  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); }
+}
+
+// ---------- history (past SOPs, like a chat sidebar) ----------
+async function loadHistory() {
+  try {
+    const r = await api("/v1/sops");
+    const el = $("history");
+    if (!r.sops.length) { el.innerHTML = `<div class="text-[12px] text-slate-400">No SOPs yet.</div>`; return; }
+    el.innerHTML = r.sops.map((s) => `
+      <div onclick="openSop('${s.id}')" data-id="${s.id}"
+           class="hist-item cursor-pointer rounded-lg border border-slate-100 hover:border-brand-violet px-3 py-2 mb-1.5">
+        <div class="text-[13px] font-medium text-slate-700 truncate">${esc(s.title)}</div>
+        <div class="text-[11px] text-slate-400">${s.steps} steps · ${Math.round(s.confidence * 100)}% · ${esc(s.state)}</div>
+      </div>`).join("");
+  } catch (e) { /* history is best-effort */ }
+}
+
+// Reopen a past SOP: load it + its screenshots into the viewer (no job needed).
+async function openSop(id) {
+  try {
+    const sop = await api(`/v1/sops/${id}`);
+    sopId = id; jobId = null; processId = sop.process_id;
+    const proc = await api(`/v1/processes/${processId}`);
+    screens = (proc.artifacts || [])
+      .sort((a, b) => (a.order || 0) - (b.order || 0))
+      .map((a) => ({ artifact_id: a.id, order: a.order || 1, elements: [], text: [] }));
+    buildViewer();
+    renderSop(sop);
+    loadChat();
+    $("trace").querySelector("tbody").innerHTML = "";
+    [...document.querySelectorAll(".hist-item")].forEach((x) => x.classList.toggle("border-brand-violet", x.dataset.id === id));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); }
+}
+
 // ---------- misc ----------
 function setStatus(id, msg, cls) {
   const el = $(id);
@@ -277,3 +475,5 @@ function resetAll() { location.reload(); }
 fetch("/v1/health").then((r) => r.json()).then((h) => {
   $("profile-badge").textContent = `profile: ${h.model_profile || "?"}`;
 }).catch(() => {});
+loadHistory();
+loadFeedback();

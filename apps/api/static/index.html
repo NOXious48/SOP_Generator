@@ -52,6 +52,7 @@
     <img src="logo.jpeg" alt="ProcessIQ" class="h-9" />
     <span class="hidden md:inline text-[13px] text-slate-400 border-l border-slate-200 pl-4">Visual Process Understanding &amp; SOP Generation</span>
     <div class="ml-auto flex items-center gap-3">
+      <span id="learn-badge" class="hidden text-[12px] font-medium text-brand-violet bg-violet-50 rounded-full px-3 py-1" title="Corrections the AI has learned from"></span>
       <span id="profile-badge" class="text-[12px] font-medium text-slate-500 bg-slate-100 rounded-full px-3 py-1"></span>
       <span class="grad text-white text-[12px] font-semibold rounded-full px-3 py-1">AI Ready</span>
     </div>
@@ -60,8 +61,16 @@
 
 <main class="max-w-[1360px] mx-auto px-6 py-6 grid gap-5" style="grid-template-columns:360px 1fr 380px;">
 
-  <!-- LEFT: describe + upload + run + trace -->
+  <!-- LEFT: history + describe + upload + run + trace -->
   <div class="flex flex-col gap-5 min-w-0">
+    <section class="card p-5">
+      <div class="flex items-center justify-between mb-3">
+        <div class="eyebrow">Recent SOPs</div>
+        <button onclick="resetAll()" class="text-[11px] font-medium text-brand-violet hover:underline">+ New</button>
+      </div>
+      <div id="history" class="max-h-[220px] overflow-auto"><div class="text-[12px] text-slate-400">No SOPs yet.</div></div>
+    </section>
+
     <section class="card p-5">
       <div class="eyebrow mb-3">1 · Describe &amp; Upload</div>
       <input id="pname" class="field mb-2" placeholder="Process name — e.g. Add a candidate in Recruitment" />
@@ -134,7 +143,13 @@
     </section>
 
     <section class="card p-5">
-      <div class="eyebrow mb-3">4 · Generated SOP</div>
+      <div class="flex items-center justify-between mb-3">
+        <div class="eyebrow">4 · Generated SOP</div>
+        <span id="sop-fb" class="hidden items-center gap-1 text-[15px]">
+          <button onclick="submitRating('up')" class="hover:scale-110 transition" title="Good SOP">👍</button>
+          <button onclick="submitRating('down')" class="hover:scale-110 transition" title="Needs work">👎</button>
+        </span>
+      </div>
       <div id="sop-title" class="text-[13px] text-slate-400">Run the pipeline to generate an SOP.</div>
       <div id="steps" class="mt-3"></div>
       <div class="flex flex-wrap gap-2 mt-3 items-center">
@@ -146,6 +161,30 @@
         <button onclick="doExport()" class="btn-grad text-white text-[13px] font-semibold rounded-lg px-4 py-2">Export</button>
       </div>
       <pre id="out" class="hidden mt-3 bg-slate-900 text-slate-100 rounded-xl p-3 text-[11px] overflow-auto" style="max-height:220px"></pre>
+
+      <div class="mt-4 border-t border-slate-100 pt-3">
+        <div class="eyebrow mb-2">Refine with AI</div>
+        <textarea id="refine" rows="2" class="field mb-2"
+          placeholder="Describe changes — e.g. 'add a logout step at the end', 'make each description more detailed'"></textarea>
+        <button onclick="refineSop()" class="btn-grad text-white text-[13px] font-semibold rounded-lg px-4 py-2 w-full">Regenerate with changes</button>
+      </div>
+    </section>
+
+    <section class="card p-5">
+      <div class="eyebrow mb-2">Version history</div>
+      <div id="versions"><div class="text-[12px] text-slate-400">No versions yet.</div></div>
+    </section>
+
+    <section class="card p-5">
+      <div class="eyebrow mb-2">Chat about this SOP</div>
+      <div id="chat-log" class="space-y-2 mb-2 max-h-[260px] overflow-auto text-[13px]">
+        <div class="text-[12px] text-slate-400">Ask a question about this SOP once one is generated.</div>
+      </div>
+      <div class="flex gap-2">
+        <input id="chat-input" class="field" placeholder="e.g. what permissions are needed?"
+               onkeydown="if(event.key==='Enter')sendChat()" />
+        <button onclick="sendChat()" class="btn-grad text-white text-[13px] font-semibold rounded-lg px-4">Send</button>
+      </div>
     </section>
   </div>
 </main>

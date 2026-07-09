@@ -3,15 +3,17 @@
 # ProcessIQ
 
 ### Enterprise AI Process Intelligence Platform
+
 **Turn screenshots into professional, step-by-step Standard Operating Procedures — automatically.**
 
-*From visuals to value. Automated · Intelligent · Actionable.*
+_From visuals to value. Automated · Intelligent · Actionable._
 
 </div>
 
 ---
 
 ## Table of Contents
+
 1. [Introduction](#1-introduction)
 2. [What ProcessIQ Does](#2-what-processiq-does)
 3. [How It Works](#3-how-it-works)
@@ -45,7 +47,7 @@ steps, each step showing the exact screenshot **with a box drawn on the button t
 confidence scores and a human review/approval flow.
 
 It is **not an OCR tool.** OCR (reading text) is only one small part. The core is **visual process
-intelligence** — understanding the *workflow* across a sequence of screens, the way a human business
+intelligence** — understanding the _workflow_ across a sequence of screens, the way a human business
 analyst would.
 
 > Full design set: [`../processiq-design/`](../processiq-design) (Sections 00–22).
@@ -133,19 +135,19 @@ cross-cutting Identity/RBAC, Audit, Observability, and Secrets.
 
 ## 5. Technology Stack
 
-| Area | Technology | Why |
-|------|-----------|-----|
-| API / backend | **FastAPI** (Python 3.12) | async, fast, shares typed models with the AI plane |
-| Contracts | **Pydantic v2** | one typed source of truth across API + agents |
-| Vision-LLM (SOP generation) | **Google Gemini** (`gemini-2.5-flash`), OpenAI-compatible | free tier, strong UI/document understanding |
-| OCR (box grounding) | **PaddleOCR** (PP-OCRv5) | accurate text + boxes; mobile (fast) / server (precise) models |
-| UI element detection | **OmniParser v2** (local GPU option) | screenshot-purpose element detection |
-| Model serving | **Inference Gateway** + hardware profiles | swap models by env var; agents stay hardware-agnostic |
-| Web UI | **HTML + Tailwind (CDN)** served by the API | zero build step; professional light theme |
-| Exports | **reportlab** (PDF), **python-docx** (DOCX), Jinja | multi-format SOP rendering with embedded screenshots |
-| Packaging | **Docker** + docker-compose | one-command run |
-| Datastores (optional/prod) | Postgres, Mongo, Redis, Qdrant, Neo4j, MinIO | polyglot persistence (design §9) |
-| Quality | **pytest**, **ruff**, GitHub Actions CI | tested + linted on every push |
+| Area                        | Technology                                                | Why                                                            |
+| --------------------------- | --------------------------------------------------------- | -------------------------------------------------------------- |
+| API / backend               | **FastAPI** (Python 3.12)                                 | async, fast, shares typed models with the AI plane             |
+| Contracts                   | **Pydantic v2**                                           | one typed source of truth across API + agents                  |
+| Vision-LLM (SOP generation) | **Google Gemini** (`gemini-2.5-flash`), OpenAI-compatible | free tier, strong UI/document understanding                    |
+| OCR (box grounding)         | **PaddleOCR** (PP-OCRv5)                                  | accurate text + boxes; mobile (fast) / server (precise) models |
+| UI element detection        | **OmniParser v2** (local GPU option)                      | screenshot-purpose element detection                           |
+| Model serving               | **Inference Gateway** + hardware profiles                 | swap models by env var; agents stay hardware-agnostic          |
+| Web UI                      | **HTML + Tailwind (CDN)** served by the API               | zero build step; professional light theme                      |
+| Exports                     | **reportlab** (PDF), **python-docx** (DOCX), Jinja        | multi-format SOP rendering with embedded screenshots           |
+| Packaging                   | **Docker** + docker-compose                               | one-command run                                                |
+| Datastores (optional/prod)  | Postgres, Mongo, Redis, Qdrant, Neo4j, MinIO              | polyglot persistence (design §9)                               |
+| Quality                     | **pytest**, **ruff**, GitHub Actions CI                   | tested + linted on every push                                  |
 
 ---
 
@@ -206,21 +208,32 @@ volume).
 ### Option B — Run with Python
 
 **What you need:** **Python 3.12** ([python.org/downloads](https://www.python.org/downloads/) — on
-Windows, tick *"Add Python to PATH"* during install).
+Windows, tick _"Add Python to PATH"_ during install).
 
-1. Open a terminal **in the project folder**.
-2. Create and activate a virtual environment:
+> ProcessIQ is built and tested on **Python 3.12.x**.
+
+1. Open a terminal **in the project folder**. Confirm your version first:
+
+   ```bash
+   python --version      # should print Python 3.12.x
+   ```
+
+2. Create and activate a virtual environment (pinned to Python 3.12):
 
    **Windows (PowerShell):**
+
    ```powershell
-   python -m venv .venv
+   py -3.12 -m venv .venv          # or: python -m venv .venv  (if python is already 3.12)
    .\.venv\Scripts\Activate.ps1
    ```
+
    **macOS / Linux:**
+
    ```bash
-   python3 -m venv .venv
+   python3.12 -m venv .venv        # or: python3 -m venv .venv  (if python3 is already 3.12)
    source .venv/bin/activate
    ```
+
 3. Install the dependencies:
    ```bash
    pip install -r requirements.txt
@@ -247,13 +260,16 @@ and is heavier (CPU-only is slower; a GPU makes it fast).
 # after the Python setup above
 pip install paddlepaddle==3.3.1 paddleocr==3.7.0
 ```
+
 Then in `.env` set:
+
 ```
 GROUND_BBOX=1
 OCR_DEVICE=cpu                 # 'cuda' if you have a working GPU Paddle build (Linux)
 OCR_DET_MODEL=PP-OCRv5_mobile_det   # 'PP-OCRv5_server_det' = more accurate, slower
 OCR_REC_MODEL=PP-OCRv5_mobile_rec   # 'PP-OCRv5_server_rec'
 ```
+
 Restart the app. First run downloads the OCR models (~130 MB) once.
 
 ---
@@ -262,8 +278,8 @@ Restart the app. First run downloads the OCR models (~130 MB) once.
 
 Open **http://localhost:8000/app** and:
 
-1. **Describe & Upload** — type a **process name** and a one-line **instruction** (e.g. *"Log in to
-   OrangeHRM, open Recruitment, and add a new candidate."*), then **drag-drop your screenshots in
+1. **Describe & Upload** — type a **process name** and a one-line **instruction** (e.g. _"Log in to
+   OrangeHRM, open Recruitment, and add a new candidate."_), then **drag-drop your screenshots in
    order**.
 2. **Run AI pipeline** — click Run. A progress bar shows the stages; a SOP appears in ~15–90s
    depending on settings.
@@ -280,18 +296,18 @@ Open **http://localhost:8000/app** and:
 
 All settings live in `.env` (copy from `.env.example`). The important ones:
 
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `HOSTED_VLM_BASE_URL` | Gemini endpoint | OpenAI-compatible vision-LLM base URL |
-| `HOSTED_VLM_API_KEY` | *(empty)* | **your** Gemini key — required for real SOPs |
-| `HOSTED_MODEL` | `gemini-2.5-flash` | which hosted model to use |
-| `INFERENCE_MODE` | `hosted` | `hosted` = use the API key; `mock` = fake output (no key) |
-| `MODEL_PROFILE` | `mock` | hardware profile: `mock`/`local-6gb`/`server-24gb`/`cloud` |
-| `GROUND_BBOX` | `1` | `1` = OCR-snap boxes (needs PaddleOCR); `0` = VLM boxes only (fast) |
-| `WARMUP_OCR` | `1` | preload OCR at boot so the first request never waits |
-| `OCR_DEVICE` | `cpu` | `cpu` on Windows; `cuda` on a Linux GPU server |
-| `OCR_DET_MODEL` / `OCR_REC_MODEL` | server models | `PP-OCRv5_mobile_*` (fast) or `_server_*` (accurate) |
-| `CONFIDENCE_THRESHOLD` | `0.75` | steps below this are flagged for review |
+| Variable                          | Default            | Meaning                                                             |
+| --------------------------------- | ------------------ | ------------------------------------------------------------------- |
+| `HOSTED_VLM_BASE_URL`             | Gemini endpoint    | OpenAI-compatible vision-LLM base URL                               |
+| `HOSTED_VLM_API_KEY`              | _(empty)_          | **your** Gemini key — required for real SOPs                        |
+| `HOSTED_MODEL`                    | `gemini-2.5-flash` | which hosted model to use                                           |
+| `INFERENCE_MODE`                  | `hosted`           | `hosted` = use the API key; `mock` = fake output (no key)           |
+| `MODEL_PROFILE`                   | `mock`             | hardware profile: `mock`/`local-6gb`/`server-24gb`/`cloud`          |
+| `GROUND_BBOX`                     | `1`                | `1` = OCR-snap boxes (needs PaddleOCR); `0` = VLM boxes only (fast) |
+| `WARMUP_OCR`                      | `1`                | preload OCR at boot so the first request never waits                |
+| `OCR_DEVICE`                      | `cpu`              | `cpu` on Windows; `cuda` on a Linux GPU server                      |
+| `OCR_DET_MODEL` / `OCR_REC_MODEL` | server models      | `PP-OCRv5_mobile_*` (fast) or `_server_*` (accurate)                |
+| `CONFIDENCE_THRESHOLD`            | `0.75`             | steps below this are flagged for review                             |
 
 > In Docker, the compose file forces `MODEL_PROFILE=mock`, `GROUND_BBOX=0`, `WARMUP_OCR=0` (lean, no
 > OCR) — your `.env` key is still used for generation.
@@ -326,12 +342,12 @@ requirements-ai.txt     optional local model deps (torch, paddle, …)
 
 ProcessIQ runs the same code from a laptop to a GPU server, selected by `MODEL_PROFILE`:
 
-| Profile | Vision/SOP | OCR | Where |
-|---------|-----------|-----|-------|
-| `mock` | fake | none | tests / Docker demo |
-| `local-6gb` | hosted Gemini | PaddleOCR (CPU) | 6 GB dev laptop |
-| `server-24gb` | self-hosted Qwen2.5-VL (vLLM) | PaddleOCR (GPU) | 24 GB Linux server |
-| `cloud` | external pools | external | GA scale |
+| Profile       | Vision/SOP                    | OCR             | Where               |
+| ------------- | ----------------------------- | --------------- | ------------------- |
+| `mock`        | fake                          | none            | tests / Docker demo |
+| `local-6gb`   | hosted Gemini                 | PaddleOCR (CPU) | 6 GB dev laptop     |
+| `server-24gb` | self-hosted Qwen2.5-VL (vLLM) | PaddleOCR (GPU) | 24 GB Linux server  |
+| `cloud`       | external pools                | external        | GA scale            |
 
 On a GPU Linux server the OCR grounding runs ~10× faster than CPU — that's the recommended target for
 accurate boxes at speed.
@@ -350,14 +366,14 @@ ruff check .       # lint
 
 ## 12. Troubleshooting
 
-| Symptom | Fix |
-|---------|-----|
-| SOP says "mock" / generic text | Your Gemini key isn't set. Check `HOSTED_VLM_API_KEY` in `.env` and `INFERENCE_MODE=hosted`. |
+| Symptom                                | Fix                                                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| SOP says "mock" / generic text         | Your Gemini key isn't set. Check `HOSTED_VLM_API_KEY` in `.env` and `INFERENCE_MODE=hosted`.                        |
 | `http://localhost:8000/app` won't load | The server isn't running, or port 8000 is busy. Check the terminal for errors; try another port with `--port 8001`. |
-| Docker: "port is already allocated" | Something else uses 8000. Stop it, or change the port mapping in `docker-compose.yml` to `"8001:8000"`. |
-| First run is slow | Docker builds the image once; Python's OCR (if enabled) downloads models once. Later runs are fast. |
-| Boxes are a bit off | You're using VLM-only boxes. Enable OCR grounding (`GROUND_BBOX=1` + PaddleOCR) for pixel-perfect boxes. |
-| "Rate limit" from Gemini | Free tier is ~20/day. Wait, or use a different key. Re-running the same screenshots is cached. |
+| Docker: "port is already allocated"    | Something else uses 8000. Stop it, or change the port mapping in `docker-compose.yml` to `"8001:8000"`.             |
+| First run is slow                      | Docker builds the image once; Python's OCR (if enabled) downloads models once. Later runs are fast.                 |
+| Boxes are a bit off                    | You're using VLM-only boxes. Enable OCR grounding (`GROUND_BBOX=1` + PaddleOCR) for pixel-perfect boxes.            |
+| "Rate limit" from Gemini               | Free tier is ~20/day. Wait, or use a different key. Re-running the same screenshots is cached.                      |
 
 ---
 

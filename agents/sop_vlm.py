@@ -87,11 +87,12 @@ class VlmSopGenerationAgent(Agent):
 
         instruction = (state.job.plan.get("instruction") or "").strip()
         process_name = (state.job.plan.get("process_name") or "").strip()
-        data = self._call_vlm(image_paths, instruction, process_name, len(ordered))
+        guidance = (state.job.plan.get("learned_guidance") or "").strip()
+        data = self._call_vlm(image_paths, instruction, process_name, len(ordered), guidance)
         state.sop = self._build_sop(state, ordered, data)
         return state
 
-    def _call_vlm(self, image_paths, instruction, process_name, n_screens) -> dict:
+    def _call_vlm(self, image_paths, instruction, process_name, n_screens, guidance="") -> dict:
         from apps.inference_gateway.adapters import vlm_chat
 
         prompt = (
@@ -100,6 +101,9 @@ class VlmSopGenerationAgent(Agent):
             f"There are {n_screens} screenshots below, in workflow order (screenshot 1 to "
             f"{n_screens}). Write the SOP for this process.\n\n{_SCHEMA_HINT}"
         )
+        if guidance:
+            prompt += ("\n\nLEARNED GUIDANCE (from earlier user corrections in this workspace — "
+                       f"apply these preferences):\n{guidance}")
         raw = vlm_chat(prompt, system=_SYSTEM, image_paths=image_paths, json_mode=True)
         return self._parse_json(raw)
 
