@@ -161,6 +161,41 @@ def test_upload_accepts_jpeg_and_webp():
     assert img.headers["content-type"] == "image/png"
 
 
+# ---- Role-based improvement suggestions (Pushp) ----
+def test_viewer_can_submit_suggestion_admin_curates():
+    sid = _make_sop()
+    step_no = client.get(f"/v1/sops/{sid}", headers=ADMIN).json()["steps"][0]["no"]
+    # a Viewer (read-only user) submits an improvement on a specific step
+    r = client.post(f"/v1/sops/{sid}/suggestions",
+                    json={"comment": "This step should mention the 2FA prompt", "step_no": step_no},
+                    headers=VIEWER)
+    assert r.status_code == 201, r.text
+    sug = r.json()
+    assert sug["status"] == "open" and sug["stepNo"] == step_no
+    # a Viewer cannot curate/resolve (admin-only)
+    assert client.patch(f"/v1/sops/{sid}/suggestions/{sug['id']}",
+                        json={"status": "resolved"}, headers=VIEWER).status_code == 403
+    # admin edits the wording and resolves it
+    r = client.patch(f"/v1/sops/{sid}/suggestions/{sug['id']}",
+                     json={"edited_comment": "Mention the 2FA prompt after login", "status": "resolved",
+                           "resolved_version": 2}, headers=ADMIN)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "resolved" and body["effective"] == "Mention the 2FA prompt after login"
+    assert body["resolvedVersion"] == 2
+    # it shows up in the SOP's suggestion list, no longer counted as open
+    lst = client.get(f"/v1/sops/{sid}/suggestions", headers=ADMIN).json()
+    assert lst["open"] == 0 and any(s["id"] == sug["id"] for s in lst["suggestions"])
+
+
+def test_suggestion_validation_and_unknown_step():
+    sid = _make_sop()
+    assert client.post(f"/v1/sops/{sid}/suggestions", json={"comment": "   "}, headers=VIEWER).status_code == 422
+    assert client.post(f"/v1/sops/{sid}/suggestions", json={"comment": "x", "step_no": 999},
+                       headers=VIEWER).status_code == 404
+    assert client.post("/v1/sops/nope/suggestions", json={"comment": "x"}, headers=VIEWER).status_code == 404
+
+
 def test_reorder_and_delete_artifacts():
     pid = client.post("/v1/processes", json={"name": "Reorder"}, headers=ADMIN).json()["processId"]
     ids = [client.post(f"/v1/processes/{pid}/uploads:file", headers=ADMIN,

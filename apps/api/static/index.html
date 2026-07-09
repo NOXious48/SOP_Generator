@@ -42,6 +42,9 @@
   ::-webkit-scrollbar { height:8px; width:8px; } ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:8px; }
   .step-card { border:1px solid #eef0f5; border-radius:12px; padding:12px 14px; margin-bottom:10px; cursor:pointer; transition:border-color .15s, box-shadow .15s; }
   .step-card:hover, .step-card.sel { border-color:#7C3AED; box-shadow:0 6px 18px -12px rgba(124,58,237,.5); }
+  /* role-scoped visibility: admins author, users read + suggest */
+  body.role-user .admin-only { display:none !important; }
+  body.role-admin .user-only { display:none !important; }
 </style>
 </head>
 <body class="min-h-screen">
@@ -52,8 +55,6 @@
     <img src="logo.jpeg" alt="ProcessIQ" class="h-9" />
     <span class="hidden md:inline text-[13px] text-slate-400 border-l border-slate-200 pl-4">Visual Process Understanding &amp; SOP Generation</span>
     <div class="ml-auto flex items-center gap-3">
-      <span id="learn-badge" class="hidden text-[12px] font-medium text-brand-violet bg-violet-50 rounded-full px-3 py-1" title="Corrections the AI has learned from"></span>
-      <span id="profile-badge" class="text-[12px] font-medium text-slate-500 bg-slate-100 rounded-full px-3 py-1"></span>
       <span class="grad text-white text-[12px] font-semibold rounded-full px-3 py-1">AI Ready</span>
     </div>
   </div>
@@ -61,8 +62,8 @@
 
 <main class="max-w-[1360px] mx-auto px-6 py-6 grid gap-5" style="grid-template-columns:360px 1fr 380px;">
 
-  <!-- LEFT: history + describe + upload + run + trace -->
-  <div class="flex flex-col gap-5 min-w-0">
+  <!-- LEFT: history + describe + upload + run + trace (pinned, like the center viewer) -->
+  <div class="flex flex-col gap-5 min-w-0 sticky top-[76px] self-start">
     <section class="card p-5">
       <div class="flex items-center justify-between mb-3">
         <div class="eyebrow">Recent SOPs</div>
@@ -71,7 +72,7 @@
       <div id="history" class="max-h-[220px] overflow-auto"><div class="text-[12px] text-slate-400">No SOPs yet.</div></div>
     </section>
 
-    <section class="card p-5">
+    <section class="card p-5 admin-only">
       <div class="eyebrow mb-3">1 · Describe &amp; Upload</div>
       <input id="pname" class="field mb-2" placeholder="Process name — e.g. Add a candidate in Recruitment" />
       <textarea id="instruction" rows="3" class="field mb-3" style="resize:vertical;font-family:inherit"
@@ -89,7 +90,7 @@
       <div id="thumbs-hint" class="text-[11px] text-slate-400 mt-1 hidden">Drag to reorder · click a thumbnail to enlarge · click ✕ to remove.</div>
     </section>
 
-    <section class="card p-5">
+    <section class="card p-5 admin-only">
       <div class="eyebrow mb-3">2 · Generate SOP</div>
       <div class="flex gap-2 mb-3">
         <button id="run-btn" onclick="runJob()" disabled
@@ -101,7 +102,7 @@
       <div id="job-status" class="text-[12px] mt-1 min-h-[16px]"></div>
     </section>
 
-    <section class="card p-5">
+    <section class="card p-5 admin-only">
       <div class="eyebrow mb-3">Agent Trace</div>
       <table class="w-full text-[12px]" id="trace">
         <thead><tr class="text-slate-400 text-left"><th class="font-medium pb-1">Agent</th><th class="font-medium pb-1">Model</th><th class="font-medium pb-1">ms</th><th class="font-medium pb-1"></th></tr></thead>
@@ -161,7 +162,7 @@
       <div id="steps" class="mt-1"></div>
       <div id="sop-extra" class="mt-3"></div>
       <div class="flex flex-wrap gap-2 mt-3 items-center">
-        <button onclick="publish()" class="text-[13px] font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50">Publish</button>
+        <button onclick="publish()" class="admin-only text-[13px] font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50">Publish</button>
         <select id="fmt" class="field" style="width:auto">
           <option>pdf</option><option>html</option><option>markdown</option><option>docx</option>
           <option>json</option><option>bpmn</option><option>testcases</option><option>rpa</option>
@@ -170,11 +171,37 @@
       </div>
       <pre id="out" class="hidden mt-3 bg-slate-900 text-slate-100 rounded-xl p-3 text-[11px] overflow-auto" style="max-height:220px"></pre>
 
-      <div class="mt-4 border-t border-slate-100 pt-3">
+      <div class="admin-only mt-4 border-t border-slate-100 pt-3">
         <div class="eyebrow mb-2">Refine with AI</div>
         <textarea id="refine" rows="2" class="field mb-2"
           placeholder="Describe changes — e.g. 'add a logout step at the end', 'make each description more detailed'"></textarea>
         <button onclick="refineSop()" class="btn-grad text-white text-[13px] font-semibold rounded-lg px-4 py-2 w-full">Regenerate with changes</button>
+      </div>
+    </section>
+
+    <!-- ADMIN: improvement inbox — read user suggestions, curate them, regenerate an improved version -->
+    <section class="card p-5 admin-only">
+      <div class="flex items-center justify-between mb-2">
+        <div class="eyebrow">Improvement inbox</div>
+        <span id="inbox-count" class="hidden text-[11px] font-semibold text-brand-violet bg-violet-50 rounded-full px-2 py-0.5"></span>
+      </div>
+      <p class="text-[12px] text-slate-500 mb-2">Suggestions submitted by users on this SOP. Edit the wording if needed, then regenerate an improved version that folds in the open ones.</p>
+      <div id="inbox"><div class="text-[12px] text-slate-400">Open a SOP to see its suggestions.</div></div>
+      <button id="improve-btn" onclick="generateImproved()"
+        class="hidden btn-grad text-white text-[13px] font-semibold rounded-lg px-4 py-2 w-full mt-3">Generate improved version from open suggestions</button>
+    </section>
+
+    <!-- USER: browse a SOP and suggest improvements (whole SOP or per step) -->
+    <section class="card p-5 user-only">
+      <div class="eyebrow mb-2">Suggest an improvement</div>
+      <p class="text-[12px] text-slate-500 mb-2">Spotted something to fix or clarify? Send it to the SOP author. Use the “Suggest” button on any step above to target that step, or submit a general one here.</p>
+      <textarea id="suggest-input" rows="3" class="field mb-2"
+        placeholder="e.g. 'Step 3 should mention the 2FA prompt', or 'add a step for logging out at the end'"></textarea>
+      <button onclick="submitSuggestion(null)" class="btn-grad text-white text-[13px] font-semibold rounded-lg px-4 py-2 w-full">Submit suggestion</button>
+      <div id="suggest-status" class="text-[12px] mt-2"></div>
+      <div class="mt-3">
+        <div class="eyebrow mb-1">Your suggestions</div>
+        <div id="my-suggestions"><div class="text-[12px] text-slate-400">None yet.</div></div>
       </div>
     </section>
 
@@ -183,7 +210,7 @@
       <div id="versions"><div class="text-[12px] text-slate-400">No versions yet.</div></div>
     </section>
 
-    <section class="card p-5">
+    <section class="card p-5 admin-only">
       <div class="eyebrow mb-2">UI drift check</div>
       <p class="text-[12px] text-slate-500 mb-2">Upload the <b>current</b> screenshots of this process. ProcessIQ compares them
         to the ones this SOP was built from and flags any screens that changed — so you can keep the SOP accurate as the UI evolves.</p>

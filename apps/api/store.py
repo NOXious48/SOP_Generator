@@ -144,6 +144,25 @@ class InMemoryStore:
         items = sorted(items, key=lambda f: f.get("at", ""), reverse=True)
         return items[:limit] if limit else items
 
+    # ---------- improvement suggestions (user-submitted, admin-curated) ----------
+    def list_suggestions(self, tenant_id: str, sop_id: str | None = None) -> list[dict]:
+        items = [f for f in self.feedback
+                 if f.get("type") == "suggestion" and f.get("tenant_id") == tenant_id
+                 and (sop_id is None or f.get("sop_id") == sop_id)]
+        return sorted(items, key=lambda f: f.get("at", ""), reverse=True)
+
+    def get_feedback(self, fid: str) -> dict | None:
+        return next((f for f in self.feedback if f.get("id") == fid), None)
+
+    def update_feedback(self, fid: str, patch: dict) -> dict | None:
+        with self._lock:
+            rec = next((f for f in self.feedback if f.get("id") == fid), None)
+            if rec is not None:
+                rec.update(patch)
+        if rec is not None:
+            self.persist()
+        return rec
+
     # ---------- chat (per-SOP conversation, durable) ----------
     def add_chat(self, sop_id: str, role: str, text: str) -> dict:
         msg = {"role": role, "text": text, "at": datetime.now(UTC).isoformat()}

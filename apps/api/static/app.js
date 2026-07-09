@@ -1,11 +1,40 @@
 // ProcessIQ demo UI — real upload -> async pipeline -> perception overlays -> SOP.
 // Talks to the control-plane API on the same origin. Admin headers for single-user demo.
-const H = { "X-Tenant": "demo", "X-User": "demo@analyst", "X-Roles": "Admin,Analyst,Reviewer" };
+const H = { "X-Tenant": "demo", "X-User": "demo@admin", "X-Roles": "Admin,Analyst,Reviewer" };
 const JSON_H = { ...H, "Content-Type": "application/json" };
+
+// Two experiences of the same app. Admin authors SOPs; User reads them and submits improvement
+// suggestions. Switching updates the identity headers so the server enforces the same boundary.
+const ROLE_HEADERS = {
+  admin: { user: "demo@admin", roles: "Admin,Analyst,Reviewer" },
+  user:  { user: "demo@user",  roles: "Viewer" },
+};
+// A ?role= in the URL (from the /admin or /user entry points) wins over the last saved choice.
+const _urlRole = new URLSearchParams(location.search).get("role");
+let role = (_urlRole === "admin" || _urlRole === "user") ? _urlRole
+           : (localStorage.getItem("piq_role") || "admin");
+function applyRoleHeaders() {
+  const r = ROLE_HEADERS[role] || ROLE_HEADERS.admin;
+  H["X-User"] = r.user; H["X-Roles"] = r.roles;
+  JSON_H["X-User"] = r.user; JSON_H["X-Roles"] = r.roles;
+}
+function setRole(r) {
+  role = r === "user" ? "user" : "admin";
+  localStorage.setItem("piq_role", role);
+  applyRoleHeaders();
+  document.body.classList.toggle("role-admin", role === "admin");
+  document.body.classList.toggle("role-user", role === "user");
+  const ab = $("role-admin-btn"), ub = $("role-user-btn");
+  if (ab && ub) { ab.classList.toggle("on", role === "admin"); ub.classList.toggle("on", role === "user"); }
+  if (sopId) loadSuggestions();   // refresh the role-specific panels for the open SOP
+}
+applyRoleHeaders();
 
 let processId = null, jobId = null, sopId = null;
 let running = false;   // guards against double-clicking Run (would fire two jobs / two API calls)
+let onJobDone = null;  // one-shot callback fired when the next pipeline job completes
 let currentSop = null; // last-rendered SOP (source for inline step editing)
+let openSuggestions = [];  // admin inbox: currently-open suggestions for the loaded SOP
 let screens = [];          // perception: [{artifact_id, order, elements[], text[]}]
 let artifacts = [];        // [{id, order, filename}]
 let images = {};           // artifact_id -> HTMLImageElement
@@ -178,6 +207,7 @@ async function pollJob() {
       setStatus("job-status", job.status === "NEEDS_REVIEW" ? "Done — some steps need review." : "Done.", job.status === "NEEDS_REVIEW" ? "warn" : "ok");
       await Promise.all([loadSop(), loadPerception(), loadTrace()]);
       loadHistory(); loadChat();
+      if (onJobDone) { const cb = onJobDone; onJobDone = null; try { await cb(); } catch (e) { /* ignore */ } }
       running = false; $("run-btn").disabled = false; return;
     }
     setTimeout(pollJob, 1000);
@@ -261,7 +291,7 @@ function startProgress() {
   stage.textContent = PROG_MSGS[0];
   progTimer = setInterval(() => {
     tick++;
-    pct += Math.max(0.5, (93 - pct) * 0.045);   // creep smoothly toward 93%, never hit 100 until done
+    pct += Math.max(0.25, (93 - pct) * 0.0225);   // creep toward 93% at half speed; never hit 100 until done
     if (pct > 93) pct = 93;
     bar.style.width = pct.toFixed(1) + "%";
     if (tick % 6 === 0 && i < PROG_MSGS.length - 1) { i++; stage.textContent = PROG_MSGS[i]; }
@@ -322,16 +352,18 @@ function renderSop(sop) {
       <div class="flex justify-between items-center gap-2">
         <b class="text-[13px]">${s.no}. ${esc(s.action)}</b>
         <span class="flex items-center gap-1.5">${badge}
-          <button title="Edit step" onclick="event.stopPropagation();editStep(${s.no})" class="text-[12px] text-slate-400 hover:text-brand-violet">✏️</button>
+          <button title="Edit step" onclick="event.stopPropagation();editStep(${s.no})" class="admin-only text-[12px] text-slate-400 hover:text-brand-violet">✏️</button>
+          <button title="Suggest an improvement for this step" onclick="event.stopPropagation();suggestStep(${s.no})" class="user-only text-[11px] font-medium text-slate-400 hover:text-brand-violet whitespace-nowrap">💡 Suggest</button>
         </span>
       </div>
       <div class="text-[12px] text-slate-500 mt-1 whitespace-pre-line">${esc(s.description)}</div>
       <div class="meter mt-2"><div style="width:${Math.round(s.confidence * 100)}%"></div></div>
-      ${flagged ? `<button class="mt-2 text-[12px] font-medium text-brand-violet border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50" onclick="event.stopPropagation();approve(${s.no})">Approve step</button>` : ""}
+      ${flagged ? `<button class="admin-only mt-2 text-[12px] font-medium text-brand-violet border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50" onclick="event.stopPropagation();approve(${s.no})">Approve step</button>` : ""}
     </div>`;
   }).join("") +
-  `<button onclick="addStep()" class="w-full mt-1 text-[12px] font-medium text-brand-violet border border-dashed border-slate-300 rounded-lg py-2 hover:bg-slate-50">+ Add step</button>`;
+  `<button onclick="addStep()" class="admin-only w-full mt-1 text-[12px] font-medium text-brand-violet border border-dashed border-slate-300 rounded-lg py-2 hover:bg-slate-50">+ Add step</button>`;
   loadVersions();
+  loadSuggestions();
 }
 
 function stepClick(el) {
@@ -600,11 +632,164 @@ function resetDrift() {
   setStatus("drift-status", "");
 }
 
+// ---------- improvement suggestions (User submits · Admin curates & regenerates) ----------
+function statusPill(status) {
+  const map = { open: ["Open", "bg-amber-100 text-amber-700"],
+                resolved: ["Resolved", "bg-emerald-100 text-emerald-700"],
+                dismissed: ["Dismissed", "bg-slate-100 text-slate-500"] };
+  const [label, cls] = map[status] || map.open;
+  return `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${cls}">${label}</span>`;
+}
+
+// One GET fills both panels; CSS shows the one for the active role.
+async function loadSuggestions() {
+  if (!sopId) return;
+  try {
+    const r = await api(`/v1/sops/${sopId}/suggestions`);
+    renderInbox(r);
+    renderMySuggestions(r);
+  } catch (e) { /* best-effort */ }
+}
+
+// ----- USER side -----
+async function submitSuggestion(stepNo) {
+  if (!sopId) { setStatus("suggest-status", "Open a SOP first.", "warn"); return; }
+  const ta = $("suggest-input");
+  const comment = ta.value.trim();
+  if (!comment) { setStatus("suggest-status", "Write a suggestion first.", "warn"); return; }
+  try {
+    await api(`/v1/sops/${sopId}/suggestions`, { method: "POST", body: JSON.stringify({ comment, step_no: stepNo }) });
+    ta.value = "";
+    setStatus("suggest-status", "Suggestion submitted — thank you!", "ok");
+    loadSuggestions();
+  } catch (e) { setStatus("suggest-status", "✗ " + e.message, "err"); }
+}
+
+// inline "suggest for this step" form injected into a step card (user mode)
+function suggestStep(no) {
+  const card = document.querySelector(`.step-card[data-no="${no}"]`);
+  if (!card || card.dataset.suggesting) return;
+  card.dataset.suggesting = "1";
+  const box = document.createElement("div");
+  box.className = "mt-2 border-t border-slate-100 pt-2";
+  box.innerHTML = `
+    <textarea class="field step-suggest text-[12px]" rows="2" placeholder="What should change about step ${no}?"></textarea>
+    <div class="flex gap-2 mt-2">
+      <button class="btn-grad text-white text-[12px] font-semibold rounded-lg px-3 py-1.5" onclick="event.stopPropagation();sendStepSuggestion(${no}, this)">Send</button>
+      <button class="text-[12px] text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5" onclick="event.stopPropagation();cancelStepSuggestion(this)">Cancel</button>
+    </div>`;
+  card.appendChild(box);
+  box.querySelector("textarea").focus();
+}
+function cancelStepSuggestion(btn) {
+  const card = btn.closest(".step-card");
+  if (card) card.removeAttribute("data-suggesting");
+  btn.closest("div.mt-2").remove();
+}
+async function sendStepSuggestion(no, btn) {
+  const card = btn.closest(".step-card");
+  const comment = card.querySelector(".step-suggest").value.trim();
+  if (!comment) { card.querySelector(".step-suggest").focus(); return; }
+  try {
+    await api(`/v1/sops/${sopId}/suggestions`, { method: "POST", body: JSON.stringify({ comment, step_no: no }) });
+    card.removeAttribute("data-suggesting");
+    setStatus("suggest-status", `Suggestion for step ${no} sent — thank you!`, "ok");
+    loadSop();   // re-render clears the inline form and refreshes "Your suggestions"
+  } catch (e) { setStatus("suggest-status", "✗ " + e.message, "err"); }
+}
+
+function renderMySuggestions(r) {
+  const el = $("my-suggestions"); if (!el) return;
+  const mine = (r.suggestions || []).filter((s) => s.author === H["X-User"]);
+  if (!mine.length) { el.innerHTML = `<div class="text-[12px] text-slate-400">None yet.</div>`; return; }
+  el.innerHTML = mine.map((s) => `
+    <div class="border-t border-slate-100 py-1.5 first:border-t-0 text-[12px]">
+      <div class="flex items-center gap-2"><span class="font-semibold text-slate-600">${s.stepNo ? "Step " + s.stepNo : "Whole SOP"}</span>${statusPill(s.status)}</div>
+      <div class="text-slate-500 mt-0.5 whitespace-pre-line">${esc(s.effective)}</div>
+      ${s.resolvedVersion ? `<div class="text-[11px] text-emerald-600 mt-0.5">✓ Applied in v${s.resolvedVersion}</div>` : ""}
+    </div>`).join("");
+}
+
+// ----- ADMIN side -----
+function renderInbox(r) {
+  const el = $("inbox"); if (!el) return;
+  const items = r.suggestions || [];
+  openSuggestions = items.filter((s) => s.status === "open");
+  const count = $("inbox-count");
+  if (count) { count.textContent = `${openSuggestions.length} open`; count.classList.toggle("hidden", items.length === 0); }
+  $("improve-btn").classList.toggle("hidden", openSuggestions.length === 0);
+  if (!items.length) { el.innerHTML = `<div class="text-[12px] text-slate-400">No suggestions yet.</div>`; return; }
+  el.innerHTML = items.map((s) => {
+    const actions = s.status === "open"
+      ? `<button onclick="curate('${s.id}','resolved')" class="text-[11px] text-emerald-600 hover:underline">Resolve</button>
+         <button onclick="curate('${s.id}','dismissed')" class="text-[11px] text-slate-400 hover:underline">Dismiss</button>`
+      : `<button onclick="curate('${s.id}','open')" class="text-[11px] text-brand-violet hover:underline">Reopen</button>`;
+    return `<div class="border-t border-slate-100 py-2 first:border-t-0" data-sid="${s.id}">
+      <div class="flex items-center gap-2 text-[12px]">
+        <span class="font-semibold text-slate-600">${s.stepNo ? "Step " + s.stepNo : "Whole SOP"}</span>${statusPill(s.status)}
+        <span class="text-slate-400 truncate">${esc(s.author || "")}</span>
+      </div>
+      <textarea class="field sug-edit text-[12px] mt-1" rows="2">${esc(s.effective)}</textarea>
+      <div class="flex items-center gap-3 mt-1">
+        <button onclick="saveCurate('${s.id}', this)" class="text-[11px] text-brand-violet hover:underline">Save edit</button>
+        ${actions}
+        ${s.resolvedVersion ? `<span class="text-[11px] text-emerald-600 ml-auto">→ v${s.resolvedVersion}</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function curate(sid, status) {
+  try {
+    await api(`/v1/sops/${sopId}/suggestions/${sid}`, { method: "PATCH", body: JSON.stringify({ status }) });
+    loadSuggestions();
+  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); }
+}
+async function saveCurate(sid, btn) {
+  const wrap = btn.closest("[data-sid]");
+  const edited_comment = wrap.querySelector(".sug-edit").value;
+  try {
+    await api(`/v1/sops/${sopId}/suggestions/${sid}`, { method: "PATCH", body: JSON.stringify({ edited_comment }) });
+    setStatus("job-status", "Suggestion wording updated.", "ok");
+    loadSuggestions();
+  } catch (e) { setStatus("job-status", "✗ " + e.message, "err"); }
+}
+
+// Fold the open suggestions into a refine instruction, regenerate a new version, then mark them resolved.
+async function generateImproved() {
+  if (running || !sopId || !processId || !openSuggestions.length) return;
+  const picked = openSuggestions.slice();
+  const lines = picked.map((s, i) => `${i + 1}. ${s.stepNo ? `(Step ${s.stepNo}) ` : ""}${s.effective}`);
+  const instruction = "Apply these user-submitted improvement suggestions and regenerate an improved SOP, " +
+    "re-deriving the affected steps and their click targets while keeping everything else intact:\n" + lines.join("\n");
+  running = true; $("run-btn").disabled = true;
+  startProgress();
+  $("stage").textContent = "Applying user suggestions";
+  try {
+    const j = await api("/v1/jobs", { method: "POST", body: JSON.stringify({
+      process_id: processId, options: { async: true, refine_sop_id: sopId, instruction } }) });
+    jobId = j.jobId;
+    onJobDone = async () => {
+      const v = currentSop ? currentSop.version : null;
+      for (const s of picked) {
+        try {
+          await api(`/v1/sops/${sopId}/suggestions/${s.id}`, { method: "PATCH",
+            body: JSON.stringify({ status: "resolved", resolved_version: v }) });
+        } catch (e) { /* ignore individual failures */ }
+      }
+      loadSuggestions();
+      setStatus("job-status", `Improved version v${v} generated from ${picked.length} suggestion(s).`, "ok");
+    };
+    pollJob();
+  } catch (e) { stopProgress(false); setStatus("job-status", "✗ " + e.message, "err"); running = false; $("run-btn").disabled = false; }
+}
+
 // ---------- feedback / learning memory ----------
 async function loadFeedback() {
   try {
     const r = await api("/v1/feedback");
     const b = $("learn-badge");
+    if (!b) return;
     if (r.corrections > 0) {
       b.textContent = `🧠 learned from ${r.corrections} correction${r.corrections > 1 ? "s" : ""}`;
       b.classList.remove("hidden");
@@ -691,7 +876,9 @@ function esc(s) { const d = document.createElement("div"); d.textContent = s ?? 
 function resetAll() { location.reload(); }
 
 fetch("/v1/health").then((r) => r.json()).then((h) => {
-  $("profile-badge").textContent = `profile: ${h.model_profile || "?"}`;
+  const badge = $("profile-badge");
+  if (badge) badge.textContent = `profile: ${h.model_profile || "?"}`;
 }).catch(() => {});
+setRole(role);   // apply persisted role: body classes, toggle styling, identity headers
 loadHistory();
 loadFeedback();

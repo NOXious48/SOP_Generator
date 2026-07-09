@@ -15,11 +15,14 @@ from processiq_shared.enums import Role
 # Role -> permitted actions (design Section 14.2).
 PERMISSIONS: dict[Role, set[str]] = {
     Role.ADMIN: {"*"},
-    Role.ANALYST: {"process:create", "job:create", "sop:read", "sop:edit", "sop:submit", "export:create"},
-    Role.REVIEWER: {"sop:read", "sop:approve", "sop:reject", "sop:signoff", "sop:publish"},
-    Role.VIEWER: {"sop:read", "search:read"},
+    Role.ANALYST: {"process:create", "job:create", "sop:read", "sop:edit", "sop:submit",
+                   "export:create", "sop:suggest"},
+    Role.REVIEWER: {"sop:read", "sop:approve", "sop:reject", "sop:signoff", "sop:publish", "sop:suggest"},
+    Role.VIEWER: {"sop:read", "search:read", "sop:suggest", "export:create"},
     Role.AUDITOR: {"sop:read", "audit:read", "search:read"},
 }
+# Note: "feedback:manage" (read/curate/resolve improvement suggestions, trigger an improved version)
+# is intentionally granted to Admin only — it is covered by the "*" wildcard above.
 
 
 @dataclass

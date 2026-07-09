@@ -12,7 +12,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from apps.api.metrics import MetricsMiddleware, metrics_response
@@ -22,6 +22,7 @@ from apps.api.routers import (
     drift,
     exports,
     feedback,
+    improvements,
     integrations,
     jobs,
     notifications,
@@ -96,7 +97,7 @@ async def unhandled(request: Request, exc: Exception):  # pragma: no cover
 
 for r in (health_router.router, processes.router, jobs.router, sops.router, review.router,
           search.router, exports.router, integrations.router, admin.router, notifications.router,
-          feedback.router, chat.router, drift.router):
+          feedback.router, chat.router, drift.router, improvements.router):
     app.include_router(r)
 
 
@@ -111,7 +112,18 @@ if _static_dir.exists():
     app.mount("/app", StaticFiles(directory=str(_static_dir), html=True), name="app")
 
 
+# Role-scoped entry points: the same UI, pre-set to the author (admin) or reader (user) experience.
+@app.get("/admin", include_in_schema=False)
+def admin_app() -> RedirectResponse:
+    return RedirectResponse(url="/app/?role=admin")
+
+
+@app.get("/user", include_in_schema=False)
+def user_app() -> RedirectResponse:
+    return RedirectResponse(url="/app/?role=user")
+
+
 @app.get("/", include_in_schema=False)
 def root() -> dict:
-    return {"name": "ProcessIQ API", "docs": "/docs", "app": "/app", "health": "/v1/health",
-            "metrics": "/metrics"}
+    return {"name": "ProcessIQ API", "docs": "/docs", "app": "/app",
+            "admin": "/admin", "user": "/user", "health": "/v1/health", "metrics": "/metrics"}
