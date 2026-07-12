@@ -209,25 +209,25 @@ Postgres/Mongo/Redis/Qdrant/Neo4j/MinIO stack (§9) is the drop-in production ta
 
 ## 5. Technology Stack
 
-| Area                        | Technology                                                | Why                                                            |
-| --------------------------- | --------------------------------------------------------- | -------------------------------------------------------------- |
-| API / backend               | **FastAPI** (Python 3.12)                                 | async, fast, shares typed models with the AI plane             |
-| Contracts                   | **Pydantic v2**                                           | one typed source of truth across API + agents                  |
-| Vision-LLM (SOP generation) | **Google Gemini** (`gemini-2.5-flash`), OpenAI-compatible | free tier, strong UI/document understanding                    |
-| Grounded chat / refine      | Same hosted LLM (text)                                     | Q&A over a SOP + plain-English refinement                      |
-| OCR (box grounding)         | **PaddleOCR** (PP-OCRv5)                                  | accurate text + boxes; mobile (fast) / server (precise) models |
-| UI element detection        | **OmniParser v2** (local GPU option)                      | screenshot-purpose element detection                           |
-| Model serving               | **Inference Gateway** + hardware profiles                 | swap models by env var; agents stay hardware-agnostic          |
-| Image handling              | **Pillow** (re-encode to PNG) + average-hash pHash        | any format → Gemini-safe PNG; dedup & drift signal             |
-| Web UI                      | **HTML + Tailwind (CDN)** + vanilla JS, served by the API | zero build step; professional light theme                     |
-| Live progress               | **Server-Sent Events (SSE)** + polling                    | streamed job status without a websocket stack                  |
-| Exports                     | **reportlab** (PDF), **python-docx** (DOCX), HTML/MD/XML  | multi-format SOP rendering with embedded, annotated screenshots|
-| Security                    | RBAC, PII redaction, prompt-injection sanitizer           | untrusted screen text treated as data, not instructions        |
-| Audit                       | **SHA-256 hash-chained** log                              | tamper-evident action history                                  |
-| Observability               | **Prometheus** metrics (`/metrics`)                       | request + job counters                                         |
-| Packaging                   | **Docker** + docker-compose                               | one-command run                                                |
-| Datastores (optional/prod)  | Postgres, Mongo, Redis, Qdrant, Neo4j, MinIO              | polyglot persistence (design §9)                               |
-| Quality                     | **pytest**, **ruff**, GitHub Actions CI                   | tested + linted on every push                                  |
+| Area                        | Technology                                                | Why                                                             |
+| --------------------------- | --------------------------------------------------------- | --------------------------------------------------------------- |
+| API / backend               | **FastAPI** (Python 3.12)                                 | async, fast, shares typed models with the AI plane              |
+| Contracts                   | **Pydantic v2**                                           | one typed source of truth across API + agents                   |
+| Vision-LLM (SOP generation) | **Google Gemini** (`gemini-2.5-flash`), OpenAI-compatible | free tier, strong UI/document understanding                     |
+| Grounded chat / refine      | Same hosted LLM (text)                                    | Q&A over a SOP + plain-English refinement                       |
+| OCR (box grounding)         | **PaddleOCR** (PP-OCRv5)                                  | accurate text + boxes; mobile (fast) / server (precise) models  |
+| UI element detection        | **OmniParser v2** (local GPU option)                      | screenshot-purpose element detection                            |
+| Model serving               | **Inference Gateway** + hardware profiles                 | swap models by env var; agents stay hardware-agnostic           |
+| Image handling              | **Pillow** (re-encode to PNG) + average-hash pHash        | any format → Gemini-safe PNG; dedup & drift signal              |
+| Web UI                      | **HTML + Tailwind (CDN)** + vanilla JS, served by the API | zero build step; professional light theme                       |
+| Live progress               | **Server-Sent Events (SSE)** + polling                    | streamed job status without a websocket stack                   |
+| Exports                     | **reportlab** (PDF), **python-docx** (DOCX), HTML/MD/XML  | multi-format SOP rendering with embedded, annotated screenshots |
+| Security                    | RBAC, PII redaction, prompt-injection sanitizer           | untrusted screen text treated as data, not instructions         |
+| Audit                       | **SHA-256 hash-chained** log                              | tamper-evident action history                                   |
+| Observability               | **Prometheus** metrics (`/metrics`)                       | request + job counters                                          |
+| Packaging                   | **Docker** + docker-compose                               | one-command run                                                 |
+| Datastores (optional/prod)  | Postgres, Mongo, Redis, Qdrant, Neo4j, MinIO              | polyglot persistence (design §9)                                |
+| Quality                     | **pytest**, **ruff**, GitHub Actions CI                   | tested + linted on every push                                   |
 
 ---
 
@@ -257,7 +257,7 @@ have Python). Either way you first need a **free** Google Gemini key. No credit 
 3. Open `.env` in any text editor and set these lines (paste your key):
    ```
    HOSTED_VLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-   HOSTED_VLM_API_KEY=PASTE_YOUR_GEMINI_KEY_HERE
+   HOSTED_VLM_API_KEY=<PASTE_YOUR_GEMINI_KEY_HERE>
    HOSTED_MODEL=gemini-2.5-flash
    INFERENCE_MODE=hosted
    ```
@@ -366,21 +366,21 @@ ProcessIQ ships two role-based entry points — **the same app**, scoped to what
 URL pre-sets the experience and sends the matching identity, so the server enforces the boundary (not
 just the UI).
 
-| URL | Role | Purpose |
-| --- | --- | --- |
-| **http://localhost:8000/admin** | **Admin / Author** | Create SOPs from screenshots, edit, review, publish, export, and act on user feedback. |
-| **http://localhost:8000/user**  | **User / Reader**  | Browse all SOPs and versions read-only, enlarge screenshots, export/download, chat, and submit improvement suggestions. |
-| `http://localhost:8000/app` | (defaults to Admin) | Plain entry point; remembers your last-used role. |
+| URL                             | Role                | Purpose                                                                                                                 |
+| ------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **http://localhost:8000/admin** | **Admin / Author**  | Create SOPs from screenshots, edit, review, publish, export, and act on user feedback.                                  |
+| **http://localhost:8000/user**  | **User / Reader**   | Browse all SOPs and versions read-only, enlarge screenshots, export/download, chat, and submit improvement suggestions. |
+| `http://localhost:8000/app`     | (defaults to Admin) | Plain entry point; remembers your last-used role.                                                                       |
 
 Under the hood the platform supports a richer **RBAC** model (each API action is permission-gated):
 
-| Role | Key permissions |
-| --- | --- |
-| **Admin** | everything (`*`) |
-| **Analyst** | create process, run jobs, read/edit SOPs, submit for review, export, suggest |
-| **Reviewer** | read, approve/reject steps, sign off, publish, suggest |
-| **Viewer** | read, search, export/download, suggest |
-| **Auditor** | read, read audit log, search |
+| Role         | Key permissions                                                              |
+| ------------ | ---------------------------------------------------------------------------- |
+| **Admin**    | everything (`*`)                                                             |
+| **Analyst**  | create process, run jobs, read/edit SOPs, submit for review, export, suggest |
+| **Reviewer** | read, approve/reject steps, sign off, publish, suggest                       |
+| **Viewer**   | read, search, export/download, suggest                                       |
+| **Auditor**  | read, read audit log, search                                                 |
 
 The `/admin` URL carries Admin+Analyst+Reviewer rights (full authoring + review + publish); the
 `/user` URL carries Viewer rights.
@@ -395,6 +395,7 @@ features appear in `/user`; **Platform** features apply to everyone / the whole 
 ### 8.1 Admin features
 
 **Ingestion & screenshots**
+
 - Create a process with a **name** and one-line **instruction** describing the workflow.
 - **Upload multiple screenshots** at once — PNG, JPG, JPEG, WEBP, GIF, or BMP. Every image is
   re-encoded to a Gemini-safe PNG server-side (max 15 MB each).
@@ -404,6 +405,7 @@ features appear in `/user`; **Platform** features apply to everyone / the whole 
 - Perceptual-hash (average-hash) computed per image for de-duplication and drift signals.
 
 **AI generation**
+
 - **Run the AI pipeline** — one click sends all screenshots + your instruction to the vision-LLM and
   returns a structured SOP.
 - **Live progress** — an animated progress bar with staged status messages while the job runs (also
@@ -413,11 +415,13 @@ features appear in `/user`; **Platform** features apply to everyone / the whole 
   later generations improve automatically.
 
 **Visual perception viewer**
+
 - Center panel shows each screenshot with detected elements / OCR boxes.
 - **Click a step → highlights the exact control** on its screenshot (auto-scrolls to it).
 - Thumbnail strip to switch screens; **double-click a screen to enlarge** it.
 
 **SOP editing & review** (every change creates a new immutable version)
+
 - Inline **edit** a step's action & description.
 - **Add** a step (optionally after a chosen step, optionally referencing a screenshot).
 - **Delete** a step; steps renumber automatically.
@@ -426,6 +430,7 @@ features appear in `/user`; **Platform** features apply to everyone / the whole 
 - Per-step **confidence meter** and **needs-review / ok** badges.
 
 **Refine & improve**
+
 - **Refine with AI** — type a plain-English change ("add a logout step", "make descriptions more
   detailed") and regenerate a new version; the old one is kept in history.
 - **Improvement inbox** — read every user suggestion on the open SOP (author, target step, status).
@@ -435,11 +440,13 @@ features appear in `/user`; **Platform** features apply to everyone / the whole 
     instruction, regenerates a new version, and marks those suggestions resolved against it.
 
 **UI drift check**
+
 - Upload the **current** screenshots of a process; ProcessIQ compares them (perceptual-hash Hamming
   distance) to the ones the SOP was built from, reports which screens changed and which steps are
   likely affected, and offers a one-click **regenerate from the updated screenshots**.
 
 **Versioning, export & chat**
+
 - **Version history** — list every version (steps, confidence, state); **view** or **download** any
   past version.
 - **Export / download** the SOP or any version in: **PDF, HTML, DOCX, Markdown, JSON, XML, BPMN, test
@@ -548,11 +555,11 @@ overall_confidence = ─ · Σ  cᵢ            cᵢ ∈ [0, 1],  reported as a 
 
 The result is surfaced as a percentage and bucketed into a **calibrated assurance band**:
 
-| Band | Range | Meaning |
-| --- | --- | --- |
-| **High** | ≥ 80% | strongly grounded; safe to publish after a glance |
-| **Moderate** | 60–79% | usable; review the flagged steps |
-| **Low** | < 60% | reconstruct-and-verify; likely missing/ambiguous evidence |
+| Band         | Range  | Meaning                                                   |
+| ------------ | ------ | --------------------------------------------------------- |
+| **High**     | ≥ 80%  | strongly grounded; safe to publish after a glance         |
+| **Moderate** | 60–79% | usable; review the flagged steps                          |
+| **Low**      | < 60%  | reconstruct-and-verify; likely missing/ambiguous evidence |
 
 Because the index is **recomputed on every edit, refine, and regeneration**, it stays live: correct a
 weak step and the reliability rises; the grounding and threshold layers keep it honest.
@@ -633,7 +640,7 @@ All settings live in `.env` (copy from `.env.example`). The important ones:
 | `OCR_DEVICE`                      | `cpu`              | `cpu` on Windows; `cuda` on a Linux GPU server                      |
 | `OCR_DET_MODEL` / `OCR_REC_MODEL` | server models      | `PP-OCRv5_mobile_*` (fast) or `_server_*` (accurate)                |
 | `CONFIDENCE_THRESHOLD`            | `0.75`             | steps below this are flagged for review                             |
-| `DATA_DIR`                        | `data`             | where the JSON snapshot + object store live                        |
+| `DATA_DIR`                        | `data`             | where the JSON snapshot + object store live                         |
 
 > In Docker, the compose file forces `MODEL_PROFILE=mock`, `GROUND_BBOX=0`, `WARMUP_OCR=0` (lean, no
 > OCR) — your `.env` key is still used for generation.
