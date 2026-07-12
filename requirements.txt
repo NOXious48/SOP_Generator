@@ -33,7 +33,7 @@ jinja2==3.1.4
 # observability
 prometheus-client==0.21.1
 
-# testing / quality
+# testing
 pytest==8.3.4
 pytest-asyncio==0.24.0
 ruff==0.8.3
